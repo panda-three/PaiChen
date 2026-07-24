@@ -1,0 +1,11 @@
+node_modules
+.next
+.env
+prisma/*.db
+prisma/*.db-journal
+coverage
+playwright-report
+test-results
+*.log
+*.tsbuildinfo
+.DS_Store

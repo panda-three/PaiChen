@@ -1,0 +1,190 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PLATFORM_ADMIN
+  STORE_ADMIN
+  EMPLOYEE
+}
+
+enum OrderStatus {
+  PENDING
+  FOLLOWING
+  WON
+  LOST
+}
+
+model Store {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  logoUrl   String?
+  phone     String
+  address   String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users      User[]
+  categories Category[]
+  products   Product[]
+  leads      Lead[]
+  orders     Order[]
+  auditLogs  AuditLog[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         Role
+  name         String
+  phone        String?
+  wechat       String?
+  title        String?
+  bio          String?
+  avatarUrl    String?
+  shareCode    String?  @unique
+  isActive     Boolean  @default(true)
+  storeId      String?
+  store        Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sourcedOrders Order[]     @relation("SourceEmployee")
+  latestLeads   Lead[]      @relation("LatestEmployee")
+  notes         OrderNote[]
+  auditLogs     AuditLog[]
+
+  @@index([storeId, role])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String
+  sort      Int       @default(0)
+  isActive  Boolean   @default(true)
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products  Product[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([storeId, name])
+  @@index([storeId, sort])
+}
+
+model Product {
+  id              String      @id @default(cuid())
+  name            String
+  code            String
+  mainImageUrl    String
+  detailImageUrls String      @default("")
+  specification   String
+  price           Decimal?
+  unit            String      @default("件")
+  description     String      @default("")
+  sort            Int         @default(0)
+  isPublished     Boolean     @default(false)
+  storeId         String
+  store           Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        Category    @relation(fields: [categoryId], references: [id])
+  orderItems      OrderItem[]
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([storeId, code])
+  @@index([storeId, isPublished, sort])
+}
+
+model Lead {
+  id               String   @id @default(cuid())
+  name             String
+  phone            String
+  storeId          String
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  latestEmployeeId String?
+  latestEmployee   User?    @relation("LatestEmployee", fields: [latestEmployeeId], references: [id], onDelete: SetNull)
+  firstOrderAt     DateTime
+  lastOrderAt      DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  orders           Order[]
+
+  @@unique([storeId, phone])
+  @@index([storeId, lastOrderAt])
+}
+
+model Order {
+  id               String      @id @default(cuid())
+  orderNo          String      @unique
+  idempotencyKey   String      @unique
+  status           OrderStatus @default(PENDING)
+  customerName     String
+  customerPhone    String
+  customerAddress  String      @default("")
+  customerRemark   String      @default("")
+  storeId          String
+  store            Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  leadId           String
+  lead             Lead        @relation(fields: [leadId], references: [id])
+  sourceEmployeeId String?
+  sourceEmployee   User?       @relation("SourceEmployee", fields: [sourceEmployeeId], references: [id], onDelete: SetNull)
+  items            OrderItem[]
+  notes            OrderNote[]
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@index([storeId, status, createdAt])
+  @@index([sourceEmployeeId, createdAt])
+}
+
+model OrderItem {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName   String
+  productCode   String
+  imageUrl      String
+  specification String
+  price         Decimal?
+  unit          String
+  quantity      Int
+}
+
+model OrderNote {
+  id        String   @id @default(cuid())
+  content   String
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  entityType String
+  entityId   String
+  beforeJson String?
+  afterJson  String?
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
+  storeId    String?
+  store      Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([storeId, createdAt])
+}
