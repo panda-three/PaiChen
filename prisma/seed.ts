@@ -11,6 +11,11 @@ const furniture = {
 };
 
 async function main() {
+  const seedPassword = process.env.SEED_PASSWORD;
+  if (!seedPassword || seedPassword.length < 12) {
+    throw new Error("SEED_PASSWORD must be set to at least 12 characters before seeding.");
+  }
+
   await prisma.auditLog.deleteMany();
   await prisma.orderNote.deleteMany();
   await prisma.orderItem.deleteMany();
@@ -21,7 +26,7 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.store.deleteMany();
 
-  const passwordHash = await hash("Demo123!", 12);
+  const passwordHash = await hash(seedPassword, 12);
   await prisma.user.create({ data: { username: "platform_admin", passwordHash, role: Role.PLATFORM_ADMIN, name: "平台管理员" } });
 
   const storeA = await prisma.store.create({
