@@ -1,0 +1,13 @@
+import { BehaviorType, Role } from "@prisma/client";
+import { requireActor } from "@/lib/authz";
+import { db } from "@/lib/db";
+import { isIntentCustomer } from "@/lib/validation";
+import { PageHeader } from "@/components/page-header";
+
+export default async function AnalyticsPage(){
+  const actor=await requireActor([Role.STORE_ADMIN,Role.EMPLOYEE]);const since=new Date(Date.now()-30*86400000);const storeId=actor.storeId!;
+  const events=await db.behaviorEvent.findMany({where:{storeId,createdAt:{gte:since},...(actor.role===Role.EMPLOYEE?{customer:{attributions:{some:{storeId,employeeId:actor.id,isCurrent:true}}}}:{})},include:{customer:true,product:true},orderBy:{createdAt:"desc"}});
+  const byCustomer=new Map<string,typeof events>();for(const event of events)if(event.customerId)byCustomer.set(event.customerId,[...(byCustomer.get(event.customerId)??[]),event]);const intents=[...byCustomer.entries()].map(([id,items])=>({id,customer:items[0].customer!,...isIntentCustomer(items)})).filter(x=>x.intent);
+  const productCounts=new Map<string,{name:string;count:number}>();for(const event of events)if(event.type===BehaviorType.PRODUCT_VIEW&&event.product)productCounts.set(event.product.id,{name:event.product.name,count:(productCounts.get(event.product.id)?.count??0)+1});const sessions=new Set(events.map(x=>x.sessionId));
+  return <><PageHeader title="经营分析" description="近 30 天固定口径统计；不采集点击坐标或像素级热力图" actions={<a className="btn" href="/api/customers/intent/export">导出意向客户</a>}/><div className="grid gap-4 md:grid-cols-4">{[["访客",sessions.size],["商品浏览",events.filter(x=>x.type===BehaviorType.PRODUCT_VIEW).length],["收藏",events.filter(x=>x.type===BehaviorType.FAVORITE).length],["意向客户",intents.length]].map(([label,n])=><div className="panel p-5" key={String(label)}><p className="muted text-sm">{label}</p><strong className="mt-2 block text-3xl">{n}</strong></div>)}</div><div className="mt-5 grid gap-5 lg:grid-cols-2"><section className="panel p-5"><h2 className="font-bold">热门商品</h2><ol className="mt-4 grid gap-2">{[...productCounts.values()].sort((a,b)=>b.count-a.count).slice(0,10).map((x,i)=><li key={x.name} className="flex justify-between"><span>{i+1}. {x.name}</span><strong>{x.count} 次</strong></li>)}</ol></section><section className="panel p-5"><h2 className="font-bold">意向客户</h2><div className="mt-4 grid gap-3">{intents.map(x=><div className="rounded bg-[#f5f7f5] p-3" key={x.id}><strong>{x.customer.name}</strong><span className="ml-2 text-sm">{x.customer.phone}</span><p className="muted mt-1 text-xs">{x.reason}</p></div>)}{!intents.length&&<p className="muted text-sm">暂无命中固定规则的客户</p>}</div></section></div></>;
+}

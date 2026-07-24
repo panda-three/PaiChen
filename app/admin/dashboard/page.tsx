@@ -1,0 +1,8 @@
+import Link from "next/link";
+import { Role } from "@prisma/client";
+import { requireActor } from "@/lib/authz";
+import { db } from "@/lib/db";
+import { orderScope } from "@/lib/scopes";
+import { PageHeader } from "@/components/page-header";
+
+export default async function Dashboard(){const actor=await requireActor([Role.STORE_ADMIN,Role.EMPLOYEE]);const storeId=actor.storeId!;const [orders,customers,products,views]=await Promise.all([db.order.count({where:orderScope(actor)}),db.lead.count({where:{storeId,...(actor.role===Role.EMPLOYEE?{OR:[{latestEmployeeId:actor.id},{orders:{some:{responsibleEmployeeId:actor.id}}}]}:{})}}),actor.role===Role.STORE_ADMIN?db.product.count({where:{storeId,isDeleted:false}}):Promise.resolve(0),db.behaviorEvent.count({where:{storeId,type:"PRODUCT_VIEW",...(actor.role===Role.EMPLOYEE?{customer:{attributions:{some:{storeId,employeeId:actor.id,isCurrent:true}}}}:{})}})]);return <><PageHeader title="工作台" description={actor.role===Role.STORE_ADMIN?"店铺经营快捷入口和非支付业务指标":"仅聚合本人来源或本人负责的数据"}/><div className="grid gap-4 md:grid-cols-4">{[["订单",orders],["客户",customers],["商品",products],["商品浏览",views]].map(([label,n])=><div className="panel p-5" key={String(label)}><p className="muted text-sm">{label}</p><strong className="mt-2 block text-3xl">{n}</strong></div>)}</div><div className="mt-5 flex flex-wrap gap-3"><Link className="btn btn-primary" href="/admin/orders/new">快速开单</Link><Link className="btn" href="/admin/orders">查询订单</Link>{actor.role===Role.STORE_ADMIN&&<><Link className="btn" href="/admin/products">发布商品</Link><Link className="btn" href="/admin/pages">新建微页面</Link><Link className="btn" href="/admin/analytics">经营分析</Link></>}</div></>}

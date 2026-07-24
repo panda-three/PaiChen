@@ -1,6 +1,6 @@
-# 云丞 AI 商城平台 MVP
+# 云丞 AI 商城平台第一阶段
 
-基于 Next.js App Router、Tailwind CSS、Prisma 和 Supabase PostgreSQL 的全栈 MVP，实现平台建店、门店商品管理、员工分享、H5 开单、客户线索、订单处理及 Excel/图片导出。
+基于 Next.js App Router、Tailwind CSS、Prisma 和 Supabase PostgreSQL 的多租户商城第一阶段，实现平台配额与代运营、企业商品授权、页面装修、客户审核与归属、多规格意向开单、经营分析及 Excel/图片导出。
 
 ## 环境变量
 
@@ -21,10 +21,19 @@ openssl rand -base64 32
 
 ```bash
 npm install
-npx prisma db push
+npm run db:deploy
 npm run db:seed
 npm run dev
 ```
+
+已有 MVP 生产库不要再执行 `db push`。首次切换迁移管理时，先备份并在脱敏副本演练，然后登记现有结构 baseline，再执行只增不删的第一阶段迁移：
+
+```bash
+npx prisma migrate resolve --applied 20260724000100_baseline
+npm run db:deploy
+```
+
+全新数据库直接运行 `npm run db:deploy`，会依次建立 baseline 和第一阶段扩展结构。扩展迁移会为旧商品回填默认规格，并为旧店铺生成与原 H5 主链路等效的已发布主页。上线前后应核对各业务表数量、订单商品快照、账号登录及原 `/s/:slug` URL；迁移不删除旧字段。
 
 打开：
 
@@ -38,6 +47,7 @@ npm run dev
 | 角色 | 账号 |
 | --- | --- |
 | 平台管理员 | `platform_admin` |
+| 企业管理员 | `enterprise_admin` |
 | 良丞店铺管理员 | `store_a_admin` |
 | 云栖店铺管理员 | `store_b_admin` |
 | 良丞员工 | `employee_a`、`employee_a2` |
@@ -64,17 +74,17 @@ npm run db:seed    # 重置本地演示数据
 - `DIRECT_URL`：Supabase Session pooler 地址
 - `AUTH_SECRET`：使用 `openssl rand -base64 32` 生成
 - `AUTH_TRUST_HOST`：`true`
+- `CRON_SECRET`：用于每日经营汇总与 365 天原始行为清理的随机密钥
 
 不要将 `SEED_PASSWORD` 配置到 Vercel，也不要把 `prisma db push` 或 `db:seed` 放入 Vercel Build Command。项目保持默认的 `npm run build`。
 
-首次部署前，在可信任的本地终端使用相同的 `DIRECT_URL` 执行：
+首次部署前，在可信任的本地终端使用相同的 `DIRECT_URL` 执行迁移。已有 MVP 库先按上文登记 baseline；全新库直接部署全部迁移：
 
 ```bash
-npx prisma db push
-npm run db:seed
+npm run db:deploy
 ```
 
-种子脚本会清空并重建演示数据，不要在已有业务数据的生产库重复运行。
+`db:seed` 只用于全新演示库，会清空并重建演示数据，绝不能在已有业务数据的生产库运行。
 
 ### Supabase 访问保护
 
@@ -90,6 +100,21 @@ alter table public."Order" enable row level security;
 alter table public."OrderItem" enable row level security;
 alter table public."OrderNote" enable row level security;
 alter table public."AuditLog" enable row level security;
+alter table public."Enterprise" enable row level security;
+alter table public."EnterpriseSeries" enable row level security;
+alter table public."EnterpriseProduct" enable row level security;
+alter table public."EnterpriseVariant" enable row level security;
+alter table public."ProductVariant" enable row level security;
+alter table public."ProductAuthorization" enable row level security;
+alter table public."ProductSyncLog" enable row level security;
+alter table public."StorePage" enable row level security;
+alter table public."PageTemplate" enable row level security;
+alter table public."CustomerProfile" enable row level security;
+alter table public."CustomerAttribution" enable row level security;
+alter table public."OrderChange" enable row level security;
+alter table public."Favorite" enable row level security;
+alter table public."BehaviorEvent" enable row level security;
+alter table public."DailyMetric" enable row level security;
 
 revoke all privileges on all tables in schema public from anon, authenticated;
 revoke all privileges on all sequences in schema public from anon, authenticated;
@@ -100,8 +125,8 @@ revoke all on tables from anon, authenticated;
 
 无需创建 RLS Policy；Prisma 使用数据库连接串在服务端访问数据。
 
-## MVP 边界
+## 第一阶段边界
 
 - 图片当前使用外部 HTTP/HTTPS URL；如需自行上传图片，再接入 Supabase Storage。
-- Excel 仅支持系统提供的 `.xlsx` 模板，导入商品默认下架。
-- 不包含小程序、页面装修、企业/工厂账号、在线支付、库存、物流、客户账号和 AI 能力。
+- Excel 支持 V2 多规格模板并兼容旧模板，导入商品默认下架。
+- 本轮只交付响应式 H5 与 PC 后台；不包含微信小程序、AI、在线支付、真实库存扣减、物流、退款及营销交易能力。

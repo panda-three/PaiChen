@@ -1,20 +1,6 @@
 import ExcelJS from "exceljs";
 import { Role } from "@prisma/client";
 import { getActiveActor } from "@/lib/authz";
+import { V2_HEADERS } from "@/lib/product-import";
 
-export async function GET() {
-  const actor = await getActiveActor();
-  if (!actor || actor.role !== Role.STORE_ADMIN) return new Response("Unauthorized", { status: 401 });
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet("商品导入");
-  sheet.columns = [
-    { header: "商品名称*", key: "name", width: 24 }, { header: "商品编码*", key: "code", width: 18 }, { header: "分类名称*", key: "category", width: 18 },
-    { header: "主图URL*", key: "mainImageUrl", width: 48 }, { header: "详情图URL", key: "detailImageUrls", width: 48 }, { header: "规格/型号*", key: "specification", width: 28 },
-    { header: "参考价格", key: "price", width: 14 }, { header: "单位", key: "unit", width: 10 }, { header: "商品描述", key: "description", width: 36 }, { header: "排序", key: "sort", width: 10 },
-  ];
-  sheet.addRow({ name: "示例商品（请删除）", code: "DEMO-001", category: "客厅系列", mainImageUrl: "https://example.com/product.jpg", detailImageUrls: "https://example.com/detail-1.jpg\nhttps://example.com/detail-2.jpg", specification: "2200x950x820mm", price: 6999, unit: "套", description: "商品描述", sort: 10 });
-  sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }; sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF176B45" } };
-  sheet.views = [{ state: "frozen", ySplit: 1 }];
-  const buffer = await workbook.xlsx.writeBuffer();
-  return new Response(buffer as ArrayBuffer, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": "attachment; filename=product-import-template.xlsx" } });
-}
+export async function GET(){const actor=await getActiveActor();if(!actor||actor.role!==Role.STORE_ADMIN)return new Response("Unauthorized",{status:401});const workbook=new ExcelJS.Workbook();const sheet=workbook.addWorksheet("商品导入V2");sheet.columns=V2_HEADERS.map((header,index)=>({header,key:`c${index}`,width:index===4||index===5?48:index===11?36:18}));sheet.addRow({c0:"V2",c1:"示例沙发（请删除）",c2:"DEMO-001",c3:"客厅系列",c4:"https://example.com/product.jpg",c5:"https://example.com/detail.jpg",c6:"三人位",c7:"DEMO-001-3S",c8:6999,c9:20,c10:"套",c11:"商品描述",c12:10});sheet.addRow({c0:"V2",c1:"示例沙发（请删除）",c2:"DEMO-001",c3:"客厅系列",c4:"https://example.com/product.jpg",c5:"https://example.com/detail.jpg",c6:"四人位",c7:"DEMO-001-4S",c8:8999,c9:10,c10:"套",c11:"商品描述",c12:10});sheet.getRow(1).font={bold:true,color:{argb:"FFFFFFFF"}};sheet.getRow(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF176B45"}};sheet.views=[{state:"frozen",ySplit:1}];const buffer=await workbook.xlsx.writeBuffer();return new Response(buffer as ArrayBuffer,{headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","Content-Disposition":"attachment; filename=product-import-template-v2.xlsx"}})}

@@ -3,6 +3,7 @@ import { Role } from "@prisma/client";
 import { getActiveActor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { statusLabel } from "@/lib/format";
+import { orderScope } from "@/lib/scopes";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   if (!actor || (actor.role !== Role.STORE_ADMIN && actor.role !== Role.EMPLOYEE) || !actor.storeId) return new Response("Unauthorized", { status: 401 });
   const order = await db.order.findFirst({
-    where: { id, storeId: actor.storeId, ...(actor.role === Role.EMPLOYEE ? { sourceEmployeeId: actor.id } : {}) },
+    where: { id, ...orderScope(actor) },
     include: { store: true, sourceEmployee: true, items: true },
   });
   if (!order) return new Response("Not found", { status: 404 });

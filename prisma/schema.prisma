@@ -10,8 +10,10 @@ datasource db {
 
 enum Role {
   PLATFORM_ADMIN
+  ENTERPRISE_ADMIN
   STORE_ADMIN
   EMPLOYEE
+  CUSTOMER
 }
 
 enum OrderStatus {
@@ -21,49 +23,117 @@ enum OrderStatus {
   LOST
 }
 
-model Store {
-  id        String   @id @default(cuid())
-  slug      String   @unique
-  name      String
-  logoUrl   String?
-  phone     String
-  address   String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+enum ProductSource {
+  MANUAL
+  EXCEL
+  ENTERPRISE
+}
 
-  users      User[]
-  categories Category[]
-  products   Product[]
-  leads      Lead[]
-  orders     Order[]
-  auditLogs  AuditLog[]
+enum AuthorizationStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  REVOKED
+}
+
+enum CustomerStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  RESET_PENDING
+}
+
+enum BehaviorType {
+  PAGE_VIEW
+  PRODUCT_VIEW
+  FAVORITE
+  CART_ADD
+  ORDER_SUBMIT
+}
+
+model Enterprise {
+  id             String                 @id @default(cuid())
+  name           String
+  code           String                 @unique
+  isActive       Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  users          User[]
+  series         EnterpriseSeries[]
+  authorizations ProductAuthorization[]
+}
+
+model Store {
+  id                   String                 @id @default(cuid())
+  slug                 String                 @unique
+  name                 String
+  logoUrl              String?
+  phone                String
+  address              String
+  isActive             Boolean                @default(true)
+  adminLimit           Int                    @default(3)
+  employeeLimit        Int                    @default(50)
+  pageEnabled          Boolean                @default(true)
+  authorizationEnabled Boolean                @default(true)
+  customerEnabled      Boolean                @default(true)
+  analyticsEnabled     Boolean                @default(true)
+  defaultCardJson      String                 @default("{}")
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  users                User[]
+  categories           Category[]
+  products             Product[]
+  leads                Lead[]
+  orders               Order[]
+  auditLogs            AuditLog[]
+  pages                StorePage[]
+  authorizations       ProductAuthorization[]
+  customerProfiles     CustomerProfile[]
+  attributions         CustomerAttribution[]
+  events               BehaviorEvent[]
+  favorites            Favorite[]
+  dailyMetrics         DailyMetric[]
 }
 
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  passwordHash String
-  role         Role
-  name         String
-  phone        String?
-  wechat       String?
-  title        String?
-  bio          String?
-  avatarUrl    String?
-  shareCode    String?  @unique
-  isActive     Boolean  @default(true)
-  storeId      String?
-  store        Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  sourcedOrders Order[]     @relation("SourceEmployee")
-  latestLeads   Lead[]      @relation("LatestEmployee")
-  notes         OrderNote[]
-  auditLogs     AuditLog[]
+  id                  String                @id @default(cuid())
+  username            String                @unique
+  passwordHash        String
+  role                Role
+  name                String
+  phone               String?
+  wechat              String?
+  title               String?
+  bio                 String?
+  avatarUrl           String?
+  shareCode           String?               @unique
+  isActive            Boolean               @default(true)
+  customerStatus      CustomerStatus?
+  resetCode           String?
+  pendingPasswordHash String?
+  storeId             String?
+  store               Store?                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  enterpriseId        String?
+  enterprise          Enterprise?           @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  sourcedOrders       Order[]               @relation("SourceEmployee")
+  responsibleOrders   Order[]               @relation("ResponsibleEmployee")
+  latestLeads         Lead[]                @relation("LatestEmployee")
+  notes               OrderNote[]
+  auditLogs           AuditLog[]
+  profiles            CustomerProfile[]     @relation("CustomerAccount")
+  sourcedProfiles     CustomerProfile[]     @relation("ProfileSource")
+  approvedProfiles    CustomerProfile[]     @relation("ProfileApprover")
+  attributions        CustomerAttribution[] @relation("AttributionCustomer")
+  attributedCustomers CustomerAttribution[] @relation("AttributionEmployee")
+  events              BehaviorEvent[]
+  favorites           Favorite[]
+  customerOrders      Order[]               @relation("CustomerOrders")
+  orderChanges        OrderChange[]
 
   @@index([storeId, role])
+  @@index([enterpriseId, role])
 }
 
 model Category {
@@ -82,27 +152,155 @@ model Category {
 }
 
 model Product {
-  id              String      @id @default(cuid())
+  id                  String                @id @default(cuid())
+  name                String
+  code                String
+  mainImageUrl        String
+  detailImageUrls     String                @default("")
+  specification       String
+  price               Decimal?
+  referenceStock      Int?
+  unit                String                @default("件")
+  description         String                @default("")
+  sort                Int                   @default(0)
+  isPublished         Boolean               @default(false)
+  isDeleted           Boolean               @default(false)
+  source              ProductSource         @default(MANUAL)
+  storeId             String
+  store               Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  categoryId          String?
+  category            Category?             @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  authorizationId     String?
+  authorization       ProductAuthorization? @relation(fields: [authorizationId], references: [id], onDelete: SetNull)
+  enterpriseProductId String?
+  enterpriseProduct   EnterpriseProduct?    @relation(fields: [enterpriseProductId], references: [id], onDelete: SetNull)
+  orderItems          OrderItem[]
+  variants            ProductVariant[]
+  favorites           Favorite[]
+  events              BehaviorEvent[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@unique([storeId, code])
+  @@index([storeId, isPublished, isDeleted, sort])
+}
+
+model ProductVariant {
+  id                  String             @id @default(cuid())
+  productId           String
+  product             Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name                String
+  code                String
+  price               Decimal?
+  referenceStock      Int?
+  sort                Int                @default(0)
+  enterpriseVariantId String?
+  enterpriseVariant   EnterpriseVariant? @relation(fields: [enterpriseVariantId], references: [id], onDelete: SetNull)
+  orderItems          OrderItem[]
+
+  @@unique([productId, code])
+}
+
+model EnterpriseSeries {
+  id             String                 @id @default(cuid())
+  enterpriseId   String
+  enterprise     Enterprise             @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  name           String
+  isActive       Boolean                @default(true)
+  products       EnterpriseProduct[]
+  authorizations ProductAuthorization[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@unique([enterpriseId, name])
+}
+
+model EnterpriseProduct {
+  id              String              @id @default(cuid())
+  seriesId        String
+  series          EnterpriseSeries    @relation(fields: [seriesId], references: [id], onDelete: Cascade)
   name            String
   code            String
   mainImageUrl    String
-  detailImageUrls String      @default("")
-  specification   String
-  price           Decimal?
-  unit            String      @default("件")
-  description     String      @default("")
-  sort            Int         @default(0)
-  isPublished     Boolean     @default(false)
-  storeId         String
-  store           Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  categoryId      String
-  category        Category    @relation(fields: [categoryId], references: [id])
-  orderItems      OrderItem[]
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  detailImageUrls String              @default("")
+  description     String              @default("")
+  unit            String              @default("件")
+  suggestedPrice  Decimal?
+  isActive        Boolean             @default(true)
+  variants        EnterpriseVariant[]
+  storeProducts   Product[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
-  @@unique([storeId, code])
-  @@index([storeId, isPublished, sort])
+  @@unique([seriesId, code])
+}
+
+model EnterpriseVariant {
+  id             String            @id @default(cuid())
+  productId      String
+  product        EnterpriseProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name           String
+  code           String
+  suggestedPrice Decimal?
+  variants       ProductVariant[]
+
+  @@unique([productId, code])
+}
+
+model ProductAuthorization {
+  id           String              @id @default(cuid())
+  enterpriseId String
+  enterprise   Enterprise          @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  seriesId     String
+  series       EnterpriseSeries    @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  storeId      String
+  store        Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  status       AuthorizationStatus @default(PENDING)
+  products     Product[]
+  syncLogs     ProductSyncLog[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@unique([seriesId, storeId])
+  @@index([storeId, status])
+}
+
+model ProductSyncLog {
+  id              String               @id @default(cuid())
+  authorizationId String
+  authorization   ProductAuthorization @relation(fields: [authorizationId], references: [id], onDelete: Cascade)
+  action          String
+  detailJson      String
+  createdAt       DateTime             @default(now())
+}
+
+model StorePage {
+  id            String    @id @default(cuid())
+  storeId       String
+  store         Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  title         String
+  slug          String
+  category      String    @default("首页")
+  draftJson     String
+  publishedJson String?
+  isHome        Boolean   @default(false)
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([storeId, slug])
+  @@index([storeId, isHome])
+}
+
+model PageTemplate {
+  id         String   @id @default(cuid())
+  name       String
+  industry   String
+  purpose    String
+  isFree     Boolean  @default(true)
+  configJson String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
 }
 
 model Lead {
@@ -123,43 +321,90 @@ model Lead {
   @@index([storeId, lastOrderAt])
 }
 
-model Order {
-  id               String      @id @default(cuid())
-  orderNo          String      @unique
-  idempotencyKey   String      @unique
-  status           OrderStatus @default(PENDING)
-  customerName     String
-  customerPhone    String
-  customerAddress  String      @default("")
-  customerRemark   String      @default("")
+model CustomerProfile {
+  id               String         @id @default(cuid())
   storeId          String
-  store            Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  leadId           String
-  lead             Lead        @relation(fields: [leadId], references: [id])
+  store            Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customerId       String
+  customer         User           @relation("CustomerAccount", fields: [customerId], references: [id], onDelete: Cascade)
+  name             String
+  phone            String
+  status           CustomerStatus @default(PENDING)
   sourceEmployeeId String?
-  sourceEmployee   User?       @relation("SourceEmployee", fields: [sourceEmployeeId], references: [id], onDelete: SetNull)
-  items            OrderItem[]
-  notes            OrderNote[]
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  sourceEmployee   User?          @relation("ProfileSource", fields: [sourceEmployeeId], references: [id], onDelete: SetNull)
+  approvedById     String?
+  approvedBy       User?          @relation("ProfileApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt       DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([storeId, customerId])
+  @@unique([storeId, phone])
+  @@index([storeId, status])
+}
+
+model CustomerAttribution {
+  id         String   @id @default(cuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   User     @relation("AttributionCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  employeeId String?
+  employee   User?    @relation("AttributionEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
+  reason     String
+  isCurrent  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([storeId, customerId, isCurrent])
+}
+
+model Order {
+  id                    String        @id @default(cuid())
+  orderNo               String        @unique
+  idempotencyKey        String        @unique
+  status                OrderStatus   @default(PENDING)
+  customerName          String
+  customerPhone         String
+  customerAddress       String        @default("")
+  customerRemark        String        @default("")
+  storeId               String
+  store                 Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  leadId                String
+  lead                  Lead          @relation(fields: [leadId], references: [id])
+  customerId            String?
+  customer              User?         @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: SetNull)
+  sourceEmployeeId      String?
+  sourceEmployee        User?         @relation("SourceEmployee", fields: [sourceEmployeeId], references: [id], onDelete: SetNull)
+  responsibleEmployeeId String?
+  responsibleEmployee   User?         @relation("ResponsibleEmployee", fields: [responsibleEmployeeId], references: [id], onDelete: SetNull)
+  items                 OrderItem[]
+  notes                 OrderNote[]
+  changes               OrderChange[]
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
   @@index([storeId, status, createdAt])
   @@index([sourceEmployeeId, createdAt])
+  @@index([responsibleEmployeeId, createdAt])
 }
 
 model OrderItem {
-  id            String   @id @default(cuid())
+  id            String          @id @default(cuid())
   orderId       String
-  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId     String?
-  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  product       Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variantId     String?
+  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
   productName   String
   productCode   String
   imageUrl      String
   specification String
+  variantCode   String?
   price         Decimal?
   unit          String
   quantity      Int
+  remark        String          @default("")
 }
 
 model OrderNote {
@@ -172,6 +417,69 @@ model OrderNote {
   createdAt DateTime @default(now())
 
   @@index([orderId, createdAt])
+}
+
+model OrderChange {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actorId     String
+  actor       User     @relation(fields: [actorId], references: [id])
+  field       String
+  beforeValue String?
+  afterValue  String?
+  createdAt   DateTime @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+model Favorite {
+  id         String   @id @default(cuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, productId])
+  @@index([storeId, createdAt])
+}
+
+model BehaviorEvent {
+  id         String       @id @default(cuid())
+  sessionId  String
+  type       BehaviorType
+  storeId    String
+  store      Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customerId String?
+  customer   User?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  productId  String?
+  product    Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  pageSlug   String?
+  dedupeKey  String       @unique
+  createdAt  DateTime     @default(now())
+
+  @@index([storeId, type, createdAt])
+  @@index([customerId, createdAt])
+}
+
+model DailyMetric {
+  id              String   @id @default(cuid())
+  storeId         String
+  store           Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  date            DateTime @db.Date
+  visitors        Int      @default(0)
+  productViews    Int      @default(0)
+  favorites       Int      @default(0)
+  cartAdds        Int      @default(0)
+  orderSubmits    Int      @default(0)
+  intentCustomers Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([storeId, date])
 }
 
 model AuditLog {

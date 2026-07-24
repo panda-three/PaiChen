@@ -1,51 +1,15 @@
 import ExcelJS from "exceljs";
-import { Role } from "@prisma/client";
+import { ProductSource, Role } from "@prisma/client";
 import { getActiveActor } from "@/lib/authz";
 import { db } from "@/lib/db";
+import { groupImportRows, ImportRow, V2_HEADERS } from "@/lib/product-import";
 
-const headers = ["商品名称*", "商品编码*", "分类名称*", "主图URL*", "详情图URL", "规格/型号*", "参考价格", "单位", "商品描述", "排序"];
-const urlPattern = /^https?:\/\/\S+$/i;
-const value = (cell: ExcelJS.Cell) => String(cell.text ?? "").trim();
-
-export async function POST(request: Request) {
-  const actor = await getActiveActor();
-  if (!actor || actor.role !== Role.STORE_ADMIN || !actor.storeId) return Response.json({ error: "无权导入商品" }, { status: 401 });
-  const form = await request.formData();
-  const file = form.get("file");
-  if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".xlsx")) return Response.json({ error: "请选择 .xlsx 文件" }, { status: 400 });
-  if (file.size > 5 * 1024 * 1024) return Response.json({ error: "文件不能超过 5MB" }, { status: 400 });
-
-  const workbook = new ExcelJS.Workbook();
-  try { await workbook.xlsx.load(await file.arrayBuffer()); } catch { return Response.json({ error: "Excel 文件无法读取" }, { status: 400 }); }
-  const sheet = workbook.worksheets[0];
-  if (!sheet) return Response.json({ error: "Excel 中没有工作表" }, { status: 400 });
-  const actualHeaders = headers.map((_, index) => value(sheet.getRow(1).getCell(index + 1)));
-  if (headers.some((header, index) => actualHeaders[index] !== header)) return Response.json({ error: "表头与当前模板不一致，请重新下载模板" }, { status: 400 });
-
-  const [categories, existing] = await Promise.all([
-    db.category.findMany({ where: { storeId: actor.storeId } }),
-    db.product.findMany({ where: { storeId: actor.storeId }, select: { code: true } }),
-  ]);
-  const categoryMap = new Map(categories.map((category) => [category.name, category]));
-  const codes = new Set(existing.map((product) => product.code));
-  const errors: { row: number; reason: string }[] = [];
-  let success = 0;
-
-  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
-    const row = sheet.getRow(rowNumber);
-    if (!row.hasValues) continue;
-    const [name, code, categoryName, mainImageUrl, detailImageUrls, specification, priceText, unit, description, sortText] = headers.map((_, index) => value(row.getCell(index + 1)));
-    let reason = "";
-    if (!name) reason = "商品名称不能为空"; else if (!code) reason = "商品编码不能为空"; else if (!categoryMap.has(categoryName)) reason = `分类“${categoryName || "空"}”不存在`; else if (!urlPattern.test(mainImageUrl)) reason = "主图 URL 格式不正确";
-    else if (detailImageUrls && detailImageUrls.split(/\r?\n/).some((url) => !urlPattern.test(url.trim()))) reason = "详情图中存在无效 URL";
-    else if (!specification) reason = "规格/型号不能为空"; else if (priceText && (!Number.isFinite(Number(priceText)) || Number(priceText) < 0)) reason = "参考价格格式不正确";
-    else if (sortText && !Number.isInteger(Number(sortText))) reason = "排序必须是整数"; else if (codes.has(code)) reason = "商品编码在本店或当前文件中重复";
-    if (reason) { errors.push({ row: rowNumber, reason }); continue; }
-    codes.add(code);
-    try {
-      await db.product.create({ data: { storeId: actor.storeId, categoryId: categoryMap.get(categoryName)!.id, name, code, mainImageUrl, detailImageUrls, specification, price: priceText ? Number(priceText) : null, unit: unit || "件", description, sort: sortText ? Number(sortText) : 0, isPublished: false } });
-      success++;
-    } catch { errors.push({ row: rowNumber, reason: "保存失败，商品编码可能已被占用" }); }
-  }
-  return Response.json({ success, failed: errors.length, errors });
+const LEGACY=["商品名称*","商品编码*","分类名称*","主图URL*","详情图URL","规格/型号*","参考价格","单位","商品描述","排序"];
+const cell=(row:ExcelJS.Row,index:number)=>String(row.getCell(index+1).text??"").trim();
+export async function POST(request:Request){const actor=await getActiveActor();if(!actor||actor.role!==Role.STORE_ADMIN||!actor.storeId)return Response.json({error:"无权导入商品"},{status:401});const form=await request.formData();const file=form.get("file");if(!(file instanceof File)||!file.name.toLowerCase().endsWith(".xlsx"))return Response.json({error:"请选择 .xlsx 文件"},{status:400});if(file.size>5*1024*1024)return Response.json({error:"文件不能超过 5MB"},{status:400});
+  const workbook=new ExcelJS.Workbook();try{await workbook.xlsx.load(await file.arrayBuffer())}catch{return Response.json({error:"Excel 文件无法读取"},{status:400})}const sheet=workbook.worksheets[0];if(!sheet)return Response.json({error:"Excel 中没有工作表"},{status:400});const first=cell(sheet.getRow(1),0);const v2=first===V2_HEADERS[0];const expected=v2?V2_HEADERS:LEGACY;if(expected.some((header,index)=>cell(sheet.getRow(1),index)!==header))return Response.json({error:"表头不受支持，请使用 V2 模板或原 MVP 模板"},{status:400});
+  const rows:ImportRow[]=[];for(let n=2;n<=sheet.rowCount;n++){const row=sheet.getRow(n);if(!row.hasValues)continue;if(v2)rows.push({row:n,name:cell(row,1),code:cell(row,2),categoryName:cell(row,3),mainImageUrl:cell(row,4),detailImageUrls:cell(row,5),variantName:cell(row,6),variantCode:cell(row,7),priceText:cell(row,8),stockText:cell(row,9),unit:cell(row,10),description:cell(row,11),sortText:cell(row,12)});else rows.push({row:n,name:cell(row,0),code:cell(row,1),categoryName:cell(row,2),mainImageUrl:cell(row,3),detailImageUrls:cell(row,4),variantName:cell(row,5),variantCode:`${cell(row,1)}-DEFAULT`,priceText:cell(row,6),stockText:"",unit:cell(row,7),description:cell(row,8),sortText:cell(row,9)})}
+  const [categories,existing]=await Promise.all([db.category.findMany({where:{storeId:actor.storeId}}),db.product.findMany({where:{storeId:actor.storeId},select:{code:true}})]);const result=groupImportRows(rows,new Set(existing.map(x=>x.code)),new Set(categories.map(x=>x.name)));const categoryMap=new Map(categories.map(x=>[x.name,x.id]));let success=0;
+  for(const product of result.products){try{const firstVariant=product.variants[0];await db.product.create({data:{storeId:actor.storeId,categoryId:categoryMap.get(product.categoryName)!,source:ProductSource.EXCEL,name:product.name,code:product.code,mainImageUrl:product.mainImageUrl,detailImageUrls:product.detailImageUrls,specification:firstVariant.name,price:firstVariant.price,referenceStock:firstVariant.stock,unit:product.unit,description:product.description,sort:product.sort,isPublished:false,variants:{create:product.variants.map((variant,sort)=>({name:variant.name,code:variant.code,price:variant.price,referenceStock:variant.stock,sort}))}}});success++}catch{result.errors.push({row:rows.find(x=>x.code===product.code)?.row??0,reason:"保存失败，商品或规格编码可能重复"})}}
+  return Response.json({success,failed:result.errors.length,errors:result.errors});
 }

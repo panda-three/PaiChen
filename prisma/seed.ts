@@ -1,5 +1,6 @@
 import { PrismaClient, Role } from "@prisma/client";
 import { hash } from "bcryptjs";
+import { homeTemplateConfig } from "../lib/page-config";
 
 const prisma = new PrismaClient();
 
@@ -17,17 +18,34 @@ async function main() {
   }
 
   await prisma.auditLog.deleteMany();
+  await prisma.behaviorEvent.deleteMany();
+  await prisma.dailyMetric.deleteMany();
+  await prisma.favorite.deleteMany();
+  await prisma.customerAttribution.deleteMany();
+  await prisma.orderChange.deleteMany();
   await prisma.orderNote.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
   await prisma.lead.deleteMany();
+  await prisma.customerProfile.deleteMany();
+  await prisma.productSyncLog.deleteMany();
+  await prisma.productVariant.deleteMany();
   await prisma.product.deleteMany();
+  await prisma.productAuthorization.deleteMany();
+  await prisma.enterpriseVariant.deleteMany();
+  await prisma.enterpriseProduct.deleteMany();
+  await prisma.enterpriseSeries.deleteMany();
+  await prisma.storePage.deleteMany();
+  await prisma.pageTemplate.deleteMany();
   await prisma.category.deleteMany();
   await prisma.user.deleteMany();
   await prisma.store.deleteMany();
+  await prisma.enterprise.deleteMany();
 
   const passwordHash = await hash(seedPassword, 12);
   await prisma.user.create({ data: { username: "platform_admin", passwordHash, role: Role.PLATFORM_ADMIN, name: "平台管理员" } });
+  const enterprise = await prisma.enterprise.create({ data: { name: "云丞示范工厂", code: "demo-factory" } });
+  await prisma.user.create({ data: { username: "enterprise_admin", passwordHash, role: Role.ENTERPRISE_ADMIN, name: "企业管理员", enterpriseId: enterprise.id } });
 
   const storeA = await prisma.store.create({
     data: { slug: "liangchen", name: "良丞家具", logoUrl: furniture.room, phone: "400-888-1024", address: "上海市闵行区家居产业园 18 号" },
@@ -52,6 +70,15 @@ async function main() {
     { name: "岩板圆餐桌", code: "LC-TB-003", categoryId: dining.id, storeId: storeA.id, mainImageUrl: furniture.table, specification: "直径 1350mm", price: 4299, unit: "张", description: "耐磨岩板台面，可容纳六人用餐。", sort: 10, isPublished: true },
     { name: "轻奢客厅组合", code: "YQ-SF-001", categoryId: otherStoreCategory.id, storeId: storeB.id, mainImageUrl: furniture.room, specification: "四件套", price: 12800, unit: "套", description: "云栖家居专属客厅组合。", sort: 10, isPublished: true },
   ] });
+
+  const products = await prisma.product.findMany();
+  await prisma.productVariant.createMany({ data: products.map((product) => ({ productId: product.id, name: product.specification, code: `${product.code}-DEFAULT`, price: product.price })) });
+  for (const store of [storeA, storeB]) {
+    const storeProducts = products.filter((product) => product.storeId === store.id);
+    const config = JSON.stringify({...homeTemplateConfig(),components:homeTemplateConfig().components.map(component=>component.type==="productGrid"?{...component,source:{mode:"selected" as const,productIds:storeProducts.map(product=>product.id)}}:component)});
+    await prisma.storePage.create({ data: { storeId: store.id, title: "店铺首页", slug: "home", draftJson: config, publishedJson: config, isHome: true, publishedAt: new Date() } });
+  }
+  await prisma.pageTemplate.create({ data: { name: "家居店铺首页", industry: "家居", purpose: "店铺首页", isFree: true, configJson: JSON.stringify(homeTemplateConfig()) } });
 }
 
 main().finally(() => prisma.$disconnect());

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { FormError, PageHeader } from "@/components/page-header";
 import { createStore, resetManagerPassword, toggleStore, updateStore } from "../actions";
+import { enterStoreSupport } from "../phase-one-actions";
 
 export default async function StoresPage({ searchParams }: { searchParams: Promise<{ edit?: string; error?: string }> }) {
   await requireActor([Role.PLATFORM_ADMIN]);
@@ -37,7 +38,7 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
         <td><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded bg-[#e7efe9] text-[#176b45]"><StoreIcon size={18} /></span><div><strong>{store.name}</strong><div className="muted mt-1 text-xs">/s/{store.slug}</div></div></div></td>
         <td>{store.users[0]?.username ?? "-"}</td><td>{store.phone}</td><td className="text-sm">{store._count.products} 商品 / {store._count.orders} 订单</td>
         <td><span className={`badge ${store.isActive ? "" : "badge-off"}`}>{store.isActive ? "已启用" : "已停用"}</span></td><td>{formatDate(store.createdAt)}</td>
-        <td><div className="actions"><Link className="btn min-h-8 px-2 text-xs" href={`/admin/stores?edit=${store.id}`}><Pencil size={14} />编辑</Link><form action={toggleStore}><input type="hidden" name="id" value={store.id} /><button className="btn min-h-8 px-2 text-xs"><Power size={14} />{store.isActive ? "停用" : "启用"}</button></form><details><summary className="btn min-h-8 list-none px-2 text-xs"><KeyRound size={14} />重置密码</summary><form action={resetManagerPassword} className="absolute z-10 mt-2 flex gap-2 rounded border bg-white p-3 shadow-lg"><input type="hidden" name="storeId" value={store.id} /><input className="field w-44" name="password" type="password" minLength={8} placeholder="新密码（至少 8 位）" required /><button className="btn btn-primary">确认</button></form></details></div></td>
+        <td><div className="actions"><form action={enterStoreSupport}><input type="hidden" name="id" value={store.id}/><button className="btn min-h-8 px-2 text-xs">代运营装修/商品</button></form><Link className="btn min-h-8 px-2 text-xs" href={`/admin/stores?edit=${store.id}`}><Pencil size={14} />编辑</Link><form action={toggleStore}><input type="hidden" name="id" value={store.id} /><button className="btn min-h-8 px-2 text-xs"><Power size={14} />{store.isActive ? "停用" : "启用"}</button></form><details><summary className="btn min-h-8 list-none px-2 text-xs"><KeyRound size={14} />重置密码</summary><form action={resetManagerPassword} className="absolute z-10 mt-2 flex gap-2 rounded border bg-white p-3 shadow-lg"><input type="hidden" name="storeId" value={store.id} /><input className="field w-44" name="password" type="password" minLength={8} placeholder="新密码（至少 8 位）" required /><button className="btn btn-primary">确认</button></form></details></div></td>
       </tr>)}</tbody></table>
       {!stores.length && <div className="empty">暂无店铺，请先创建。</div>}
     </section>

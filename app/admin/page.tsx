@@ -4,5 +4,5 @@ import { requireActor } from "@/lib/authz";
 
 export default async function AdminHome() {
   const actor = await requireActor();
-  redirect(actor.role === Role.PLATFORM_ADMIN ? "/admin/stores" : actor.role === Role.STORE_ADMIN ? "/admin/orders" : "/admin/share");
+  redirect(actor.role === Role.PLATFORM_ADMIN ? "/admin/organizations" : actor.role === Role.ENTERPRISE_ADMIN ? "/admin/enterprise" : actor.role === Role.CUSTOMER ? "/me" : "/admin/dashboard");
 }

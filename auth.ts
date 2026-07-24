@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { z } from "zod";
+import { CustomerStatus, Role } from "@prisma/client";
 import { db } from "@/lib/db";
 
 const credentialsSchema = z.object({
@@ -25,9 +26,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: { username: parsed.data.username },
           include: { store: true },
         });
-        if (!user || !user.isActive || (user.store && !user.store.isActive)) return null;
+        if (!user || !user.isActive || (user.store && !user.store.isActive) || (user.role === Role.CUSTOMER && user.customerStatus !== CustomerStatus.ACTIVE)) return null;
         if (!(await compare(parsed.data.password, user.passwordHash))) return null;
-        return { id: user.id, name: user.name, role: user.role, storeId: user.storeId };
+        return { id: user.id, name: user.name, role: user.role, storeId: user.storeId, enterpriseId: user.enterpriseId };
       },
     }),
   ],
@@ -37,6 +38,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.userId = user.id;
         token.role = user.role;
         token.storeId = user.storeId;
+        token.enterpriseId = user.enterpriseId;
       }
       return token;
     },
@@ -44,6 +46,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.id = token.userId as string;
       session.user.role = token.role as "PLATFORM_ADMIN" | "STORE_ADMIN" | "EMPLOYEE";
       session.user.storeId = (token.storeId as string | null) ?? null;
+      session.user.enterpriseId = (token.enterpriseId as string | null) ?? null;
       return session;
     },
   },

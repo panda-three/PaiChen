@@ -6,8 +6,10 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { requireActor } from "@/lib/authz";
+import { getCatalogStore, requireActor } from "@/lib/authz";
 import { db } from "@/lib/db";
+import { orderScope } from "@/lib/scopes";
+import { homeTemplateConfig } from "@/lib/page-config";
 
 const optionalUrl = z.union([z.literal(""), z.string().url("图片必须是有效的 HTTP/HTTPS URL")]);
 const phone = z.string().trim().regex(/^1\d{10}$|^[0-9+() -]{6,20}$/, "联系电话格式不正确");
@@ -51,6 +53,8 @@ export async function createStore(data: FormData) {
   const store = await db.$transaction(async (tx) => {
     const created = await tx.store.create({ data: { name: value.name, slug: value.slug, phone: value.phone, address: value.address } });
     await tx.user.create({ data: { username: value.username, passwordHash: await hash(value.password, 12), role: Role.STORE_ADMIN, name: value.managerName, phone: value.phone, storeId: created.id } });
+    const homepage = JSON.stringify(homeTemplateConfig());
+    await tx.storePage.create({ data: { storeId: created.id, title: "店铺首页", slug: "home", category: "首页", draftJson: homepage, publishedJson: homepage, isHome: true, publishedAt: new Date() } });
     return created;
   }).catch(() => null);
   if (!store) fail("/admin/stores", "店铺标识或登录账号已存在");
@@ -97,7 +101,8 @@ export async function saveStoreProfile(data: FormData) {
   const schema = z.object({ name: z.string().min(1, "请填写店铺名称"), logoUrl: optionalUrl, phone, address: z.string().min(1, "请填写店铺地址") });
   const parsed = schema.safeParse({ name: text(data, "name"), logoUrl: text(data, "logoUrl"), phone: text(data, "phone"), address: text(data, "address") });
   if (!parsed.success) fail("/admin/store", fieldError(parsed.error));
-  await db.store.update({ where: { id: actor.storeId! }, data: { ...parsed.data, logoUrl: parsed.data.logoUrl || null } });
+  const defaultCardJson = JSON.stringify({ name: text(data,"cardName") || parsed.data.name, phone: text(data,"cardPhone") || parsed.data.phone, wechat: text(data,"cardWechat") || null, title: text(data,"cardTitle") || "店铺顾问", bio: text(data,"cardBio") || parsed.data.address, avatarUrl: text(data,"cardAvatarUrl") || parsed.data.logoUrl || null, shareCode: null });
+  await db.store.update({ where: { id: actor.storeId! }, data: { ...parsed.data, logoUrl: parsed.data.logoUrl || null, defaultCardJson } });
   revalidatePath("/admin/store"); revalidatePath(`/s/${actor.store!.slug}`);
 }
 
@@ -106,6 +111,8 @@ const employeeSchema = z.object({
   wechat: z.string().max(50, "微信号不能超过 50 个字符"), title: z.string().max(30, "职位不能超过 30 个字符"),
   bio: z.string().max(90, "名片文案不能超过 90 个字符"), avatarUrl: optionalUrl,
 });
+
+export async function saveMyCard(data:FormData){const actor=await requireActor([Role.EMPLOYEE]);const parsed=employeeSchema.safeParse({name:text(data,"name"),username:actor.username,phone:text(data,"phone"),wechat:text(data,"wechat"),title:text(data,"title"),bio:text(data,"bio"),avatarUrl:text(data,"avatarUrl")});if(!parsed.success)fail("/admin/share",fieldError(parsed.error));await db.user.update({where:{id:actor.id},data:{name:parsed.data.name,phone:parsed.data.phone,wechat:parsed.data.wechat,title:parsed.data.title,bio:parsed.data.bio,avatarUrl:parsed.data.avatarUrl||null}});revalidatePath("/admin/share");revalidatePath(`/s/${actor.store!.slug}`)}
 
 export async function saveEmployee(data: FormData) {
   const actor = await requireActor([Role.STORE_ADMIN]);
@@ -120,6 +127,8 @@ export async function saveEmployee(data: FormData) {
   } else {
     const password = text(data, "password");
     if (password.length < 8) fail(path, "初始密码至少 8 个字符");
+    const [store, employeeCount] = await Promise.all([db.store.findUnique({ where: { id: actor.storeId! }, select: { employeeLimit: true } }), db.user.count({ where: { storeId: actor.storeId, role: Role.EMPLOYEE } })]);
+    if (!store || employeeCount >= store.employeeLimit) fail(path, `员工账号已达到上限（${store?.employeeLimit ?? 0}）`);
     await db.user.create({ data: { ...parsed.data, avatarUrl: parsed.data.avatarUrl || null, role: Role.EMPLOYEE, passwordHash: await hash(password, 12), shareCode: randomUUID(), storeId: actor.storeId! } }).catch(() => fail(path, "登录账号已存在"));
   }
   revalidatePath(path);
@@ -170,37 +179,41 @@ export async function deleteCategory(data: FormData) {
 const productSchema = z.object({
   name: z.string().min(1, "请填写商品名称"), code: z.string().min(1, "请填写商品编码"), categoryId: z.string().min(1, "请选择分类"),
   mainImageUrl: z.string().url("主图必须是有效的图片 URL"), detailImageUrls: z.string(), specification: z.string().min(1, "请填写规格/型号"),
-  price: z.union([z.literal(""), z.coerce.number().min(0, "价格不能小于 0")]), unit: z.string().min(1, "请填写单位"), description: z.string(), sort: z.coerce.number().int(),
+  price: z.union([z.literal(""), z.coerce.number().min(0, "价格不能小于 0")]), referenceStock: z.union([z.literal(""), z.coerce.number().int().min(0, "参考库存不能小于 0")]), unit: z.string().min(1, "请填写单位"), description: z.string(), sort: z.coerce.number().int(),
 });
 
 export async function saveProduct(data: FormData) {
-  const actor = await requireActor([Role.STORE_ADMIN]);
-  const storeId = actor.storeId!;
+  const actor = await requireActor([Role.STORE_ADMIN, Role.PLATFORM_ADMIN]);
+  const storeId = await getCatalogStore(actor);
+  if (!storeId) fail("/admin/products", "请先选择代运营店铺");
   const path = "/admin/products";
-  const parsed = productSchema.safeParse({ name: text(data, "name"), code: text(data, "code"), categoryId: text(data, "categoryId"), mainImageUrl: text(data, "mainImageUrl"), detailImageUrls: text(data, "detailImageUrls"), specification: text(data, "specification"), price: text(data, "price"), unit: text(data, "unit"), description: text(data, "description"), sort: text(data, "sort") || "0" });
+  const parsed = productSchema.safeParse({ name: text(data, "name"), code: text(data, "code"), categoryId: text(data, "categoryId"), mainImageUrl: text(data, "mainImageUrl"), detailImageUrls: text(data, "detailImageUrls"), specification: text(data, "specification"), price: text(data, "price"), referenceStock: text(data, "referenceStock"), unit: text(data, "unit"), description: text(data, "description"), sort: text(data, "sort") || "0" });
   if (!parsed.success) fail(path, fieldError(parsed.error));
   const category = await db.category.findFirst({ where: { id: parsed.data.categoryId, storeId } });
   if (!category) fail(path, "所选分类不存在");
-  const values = { ...parsed.data, price: parsed.data.price === "" ? null : parsed.data.price };
+  const values = { ...parsed.data, price: parsed.data.price === "" ? null : parsed.data.price, referenceStock: parsed.data.referenceStock === "" ? null : parsed.data.referenceStock };
   const id = text(data, "id");
   if (id) {
     const current = await db.product.findFirst({ where: { id, storeId } });
     if (!current) fail(path, "商品不存在");
-    await db.product.update({ where: { id }, data: values }).catch(() => fail(path, "商品编码已存在"));
+    const update = current.source === "ENTERPRISE" ? { categoryId: values.categoryId, price: values.price, referenceStock: values.referenceStock, sort: values.sort } : values;
+    await db.$transaction(async (tx) => { await tx.product.update({ where: { id }, data: update }); const variant = await tx.productVariant.findFirst({ where: { productId: id }, orderBy: { sort: "asc" } }); if (variant && current.source !== "ENTERPRISE") await tx.productVariant.update({ where: { id: variant.id }, data: { name: values.specification, price: values.price, referenceStock: values.referenceStock } }); }).catch(() => fail(path, "商品编码已存在"));
   } else {
-    await db.product.create({ data: { ...values, storeId, isPublished: false } }).catch(() => fail(path, "商品编码已存在"));
+    await db.product.create({ data: { ...values, storeId, isPublished: false, variants: { create: { name: values.specification, code: `${values.code}-DEFAULT`, price: values.price, referenceStock: values.referenceStock } } } }).catch(() => fail(path, "商品编码已存在"));
   }
   revalidatePath(path);
 }
 
 export async function toggleProduct(data: FormData) {
-  const actor = await requireActor([Role.STORE_ADMIN]);
-  const product = await db.product.findFirst({ where: { id: text(data, "id"), storeId: actor.storeId! }, include: { category: true } });
+  const actor = await requireActor([Role.STORE_ADMIN, Role.PLATFORM_ADMIN]);
+  const storeId = await getCatalogStore(actor);
+  if (!storeId) fail("/admin/products", "请先选择代运营店铺");
+  const product = await db.product.findFirst({ where: { id: text(data, "id"), storeId, isDeleted: false }, include: { category: true, authorization: true, store: true } });
   if (!product) return;
-  if (!product.isPublished && !product.category.isActive) fail("/admin/products", "所属分类已停用，不能上架商品");
+  if (!product.isPublished && (!product.category?.isActive || (product.source === "ENTERPRISE" && product.authorization?.status !== "ACTIVE"))) fail("/admin/products", "商品未分类、分类已停用或企业授权已失效，不能上架");
   const updated = await db.product.update({ where: { id: product.id }, data: { isPublished: !product.isPublished } });
-  await audit({ actorId: actor.id, storeId: actor.storeId, action: updated.isPublished ? "商品上架" : "商品下架", entityType: "Product", entityId: product.id, before: { isPublished: product.isPublished }, after: { isPublished: updated.isPublished } });
-  revalidatePath("/admin/products"); revalidatePath(`/s/${actor.store!.slug}`);
+  await audit({ actorId: actor.id, storeId, action: updated.isPublished ? "商品上架" : "商品下架", entityType: "Product", entityId: product.id, before: { isPublished: product.isPublished }, after: { isPublished: updated.isPublished } });
+  revalidatePath("/admin/products"); revalidatePath(`/s/${product.store.slug}`);
 }
 
 export async function updateOrderStatus(data: FormData) {
@@ -211,7 +224,7 @@ export async function updateOrderStatus(data: FormData) {
   const order = await db.order.findFirst({ where: { id, storeId: actor.storeId! } });
   if (!order) fail("/admin/orders", "订单不存在");
   if (order.status !== status.data) {
-    await db.order.update({ where: { id }, data: { status: status.data } });
+    await db.$transaction([db.order.update({ where: { id }, data: { status: status.data } }), db.orderChange.create({ data: { orderId: id, actorId: actor.id, field: "status", beforeValue: order.status, afterValue: status.data } })]);
     await audit({ actorId: actor.id, storeId: actor.storeId, action: "订单状态变更", entityType: "Order", entityId: id, before: { status: order.status }, after: { status: status.data } });
   }
   revalidatePath(`/admin/orders/${id}`); revalidatePath("/admin/orders");
@@ -222,7 +235,7 @@ export async function addOrderNote(data: FormData) {
   const id = text(data, "id");
   const content = text(data, "content");
   if (!content) fail(`/admin/orders/${id}`, "请填写备注内容");
-  const order = await db.order.findFirst({ where: { id, storeId: actor.storeId!, ...(actor.role === Role.EMPLOYEE ? { sourceEmployeeId: actor.id } : {}) } });
+  const order = await db.order.findFirst({ where: { id, ...orderScope(actor) } });
   if (!order) fail("/admin/orders", "订单不存在或无权访问");
   await db.orderNote.create({ data: { orderId: id, authorId: actor.id, content } });
   revalidatePath(`/admin/orders/${id}`);
