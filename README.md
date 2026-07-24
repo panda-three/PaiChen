@@ -1,8 +1,23 @@
 # 云丞 AI 商城平台 MVP
 
-基于 Next.js App Router、Tailwind CSS、Prisma 和 SQLite 的本地全栈 MVP，实现平台建店、门店商品管理、员工分享、H5 开单、客户线索、订单处理及 Excel/图片导出。
+基于 Next.js App Router、Tailwind CSS、Prisma 和 Supabase PostgreSQL 的全栈 MVP，实现平台建店、门店商品管理、员工分享、H5 开单、客户线索、订单处理及 Excel/图片导出。
 
-## 启动
+## 环境变量
+
+在 Supabase 项目的 **Connect** 页面复制两个连接地址：
+
+- `DATABASE_URL`：Transaction pooler，端口 `6543`，供 Vercel 运行时使用；追加 `pgbouncer=true&connection_limit=1`。
+- `DIRECT_URL`：Direct connection，端口 `5432`，供 Prisma 建表使用。
+
+本地复制 `.env.example` 为 `.env`，填入真实地址，并生成认证密钥：
+
+```bash
+openssl rand -base64 32
+```
+
+将生成结果写入 `AUTH_SECRET`。不要提交 `.env`。
+
+## 初始化
 
 ```bash
 npm install
@@ -39,9 +54,26 @@ npm run build      # 生产构建
 npm run db:seed    # 重置本地演示数据
 ```
 
-## 本地 MVP 边界
+## Vercel 部署
 
-- 图片通过 HTTP/HTTPS URL 维护，不保存上传文件。
+在 Vercel 项目的 Production 环境添加以下变量：
+
+- `DATABASE_URL`：Supabase Transaction pooler 地址
+- `DIRECT_URL`：Supabase Direct connection 地址
+- `AUTH_SECRET`：使用 `openssl rand -base64 32` 生成
+- `AUTH_TRUST_HOST`：`true`
+
+首次部署前，在可信任的本地终端使用相同的 `DIRECT_URL` 执行：
+
+```bash
+npx prisma db push
+npm run db:seed
+```
+
+种子脚本会清空并重建演示数据，不要在已有业务数据的生产库重复运行。
+
+## MVP 边界
+
+- 图片当前使用外部 HTTP/HTTPS URL；如需自行上传图片，再接入 Supabase Storage。
 - Excel 仅支持系统提供的 `.xlsx` 模板，导入商品默认下架。
 - 不包含小程序、页面装修、企业/工厂账号、在线支付、库存、物流、客户账号和 AI 能力。
-- `.env` 中的 `AUTH_SECRET` 仅用于本机演示，部署前必须更换并迁移至 PostgreSQL 和对象存储。
