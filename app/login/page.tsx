@@ -12,7 +12,7 @@ export default async function LoginPage() {
         <h1 className="text-2xl font-bold">云丞 AI 商城</h1>
         <p className="mt-2 text-sm text-white/70">商品展示、客户开单与门店跟进后台</p>
       </div>
-      <div className="p-7"><LoginForm /><p className="mt-5 text-xs leading-5 text-[#788179]">演示账号：platform_admin、store_a_admin、employee_a<br />统一密码：Demo123!</p></div>
+      <div className="p-7"><LoginForm /><p className="mt-5 text-xs leading-5 text-[#788179]">演示账号：platform_admin、store_a_admin、employee_a<br />密码为初始化数据库时设置的 `SEED_PASSWORD`。</p></div>
     </section>
   </main>;
 }
