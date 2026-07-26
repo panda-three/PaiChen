@@ -2,11 +2,13 @@ import { CustomerStatus, Role } from "@prisma/client";
 import { hash } from "bcryptjs";
 import { db } from "@/lib/db";
 import { customerRegistrationSchema } from "@/lib/validation";
+import { canAccessPublicStore } from "@/lib/deployment-scope";
 
 export async function POST(request: Request) {
   const parsed = customerRegistrationSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message ?? "注册内容不正确" }, { status: 400 });
   const input = parsed.data;
+  if (!canAccessPublicStore(input.storeSlug)) return Response.json({ error: "Preview 仅允许测试店铺写入" }, { status: 403 });
   const store = await db.store.findFirst({ where: { slug: input.storeSlug, isActive: true, customerEnabled: true }, include: { users: { where: { role: Role.EMPLOYEE, shareCode: input.ref ?? undefined, isActive: true }, take: 1 } } });
   if (!store) return Response.json({ error: "店铺暂不开放客户注册" }, { status: 404 });
   const existing = await db.user.findUnique({ where: { username: input.phone } });

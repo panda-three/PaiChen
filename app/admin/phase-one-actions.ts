@@ -10,6 +10,7 @@ import { z } from "zod";
 import { requireActor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { parsePageConfig, blankPageConfig, homeTemplateConfig, validatePageConfigForStore, type PageConfigV2 } from "@/lib/page-config";
+import { buildPageCopyData, publicPagePath } from "@/lib/page-management";
 
 const value = (data: FormData, key: string) => String(data.get(key) ?? "").trim();
 const fail = (path: string, message: string): never => redirect(`${path}?error=${encodeURIComponent(message)}`);
@@ -149,6 +150,38 @@ export async function createPage(data: FormData) {
   revalidatePath("/admin/pages");
 }
 
+export async function duplicatePage(data: FormData) {
+  const actor = await requireActor([Role.STORE_ADMIN, Role.PLATFORM_ADMIN]);
+  const id = value(data, "id");
+  const storeId = actor.role === Role.STORE_ADMIN ? actor.storeId : (await cookies()).get("supportStoreId")?.value;
+  if (!storeId) fail("/admin/pages", "请先选择代运营店铺");
+  const targetStoreId = storeId!;
+  const page = await db.storePage.findFirst({ where: { id, storeId: targetStoreId } });
+  if (!page) fail("/admin/pages", "页面不存在");
+  const pages = await db.storePage.findMany({ where: { storeId: targetStoreId }, select: { slug: true } });
+  const copy = buildPageCopyData(page!, new Set(pages.map((item) => item.slug)));
+  const created = await db.storePage.create({ data: { storeId: targetStoreId, ...copy } }).catch(() => null);
+  if (!created) fail("/admin/pages", "复制失败，请重试");
+  await audit(actor.id, "复制页面草稿", "StorePage", created!.id, targetStoreId, { sourcePageId: page!.id, title: created!.title, slug: created!.slug });
+  revalidatePath("/admin/pages");
+}
+
+export async function deletePage(data: FormData) {
+  const actor = await requireActor([Role.STORE_ADMIN, Role.PLATFORM_ADMIN]);
+  const id = value(data, "id");
+  const storeId = actor.role === Role.STORE_ADMIN ? actor.storeId : (await cookies()).get("supportStoreId")?.value;
+  if (!storeId) fail("/admin/pages", "请先选择代运营店铺");
+  const targetStoreId = storeId!;
+  const page = await db.storePage.findFirst({ where: { id, storeId: targetStoreId }, include: { store: { select: { slug: true } } } });
+  if (!page) fail("/admin/pages", "页面不存在");
+  if (page!.isHome) fail("/admin/pages", "当前主页不能删除，请先将其他已发布页面设为主页");
+  const deleted = await db.storePage.deleteMany({ where: { id, storeId: targetStoreId, isHome: false } });
+  if (!deleted.count) fail("/admin/pages", "页面状态已变化，请刷新后重试");
+  await audit(actor.id, "删除页面", "StorePage", id, targetStoreId, { title: page!.title, slug: page!.slug });
+  revalidatePath("/admin/pages");
+  revalidatePath(publicPagePath(page!.store.slug, page!.slug, false));
+}
+
 async function checkedPageConfig(raw: unknown, storeId: string, home: boolean) {
   const config = parsePageConfig(raw);
   const [products, categories] = await Promise.all([
@@ -238,12 +271,15 @@ export async function assignOrder(data: FormData) {
 export async function bulkProducts(data: FormData) {
   const actor = await requireActor([Role.STORE_ADMIN]);
   const storeId = actor.storeId!;
-  const ids = value(data, "ids").split(",").filter(Boolean); const action = value(data, "operation"); const categoryId = value(data, "categoryId") || null;
+  const ids = [...new Set(data.getAll("ids").map(String).flatMap((item) => item.split(",")).filter(Boolean))]; const action = value(data, "operation"); const categoryId = value(data, "categoryId") || null;
   if (!ids.length) fail("/admin/products", "请选择商品");
   if (action === "publish") await db.product.updateMany({ where: { id: { in: ids }, storeId, isDeleted: false, categoryId: { not: null } }, data: { isPublished: true } });
   else if (action === "unpublish") await db.product.updateMany({ where: { id: { in: ids }, storeId }, data: { isPublished: false } });
   else if (action === "delete") await db.product.updateMany({ where: { id: { in: ids }, storeId, source: { not: ProductSource.ENTERPRISE } }, data: { isPublished: false, isDeleted: true } });
-  else if (action === "category" && categoryId && await db.category.findFirst({ where: { id: categoryId, storeId } })) await db.product.updateMany({ where: { id: { in: ids }, storeId }, data: { categoryId } });
+  else if (action === "category") {
+    if (!categoryId || !await db.category.findFirst({ where: { id: categoryId, storeId, isActive: true } })) fail("/admin/products", "所选分类不可用");
+    await db.product.updateMany({ where: { id: { in: ids }, storeId, isDeleted: false }, data: { categoryId, isPublished: false } });
+  }
   revalidatePath("/admin/products");
 }
 
@@ -258,7 +294,8 @@ export async function quickOrder(data: FormData) {
   const now = new Date(); const orderNo = `YC${now.toISOString().slice(0, 10).replaceAll("-", "")}${String(Date.now()).slice(-6)}`;
   const order = await db.$transaction(async (tx) => {
     const lead = await tx.lead.upsert({ where: { storeId_phone: { storeId: actor.storeId!, phone } }, create: { storeId: actor.storeId!, phone, name, latestEmployeeId: actor.role === Role.EMPLOYEE ? actor.id : null, firstOrderAt: now, lastOrderAt: now }, update: { name, lastOrderAt: now } });
-    return tx.order.create({ data: { orderNo, idempotencyKey: randomUUID(), storeId: actor.storeId!, leadId: lead.id, customerName: name, customerPhone: phone, sourceEmployeeId: actor.role === Role.EMPLOYEE ? actor.id : null, responsibleEmployeeId: actor.role === Role.EMPLOYEE ? actor.id : null, items: { create: { productId: activeProduct.id, variantId: variant?.id, productName: activeProduct.name, productCode: activeProduct.code, imageUrl: activeProduct.mainImageUrl, specification: variant?.name ?? activeProduct.specification, variantCode: variant?.code, price: variant?.price ?? activeProduct.price, unit: activeProduct.unit, quantity } } } });
+    const snapshotPrice = variant?.price ?? activeProduct.price;
+    return tx.order.create({ data: { orderNo, idempotencyKey: randomUUID(), storeId: actor.storeId!, leadId: lead.id, customerName: name, customerPhone: phone, sourceEmployeeId: actor.role === Role.EMPLOYEE ? actor.id : null, responsibleEmployeeId: actor.role === Role.EMPLOYEE ? actor.id : null, items: { create: { productId: activeProduct.id, variantId: variant?.id, productName: activeProduct.name, productCode: activeProduct.code, imageUrl: variant?.imageUrl || activeProduct.mainImageUrl, specification: variant ? [variant.name, variant.specification].filter(Boolean).join(" · ") : activeProduct.specification, variantCode: variant?.code, price: snapshotPrice, salePrice: snapshotPrice, unit: activeProduct.unit, quantity } } } });
   });
   redirect(`/admin/orders/${order.id}`);
 }

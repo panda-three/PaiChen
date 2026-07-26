@@ -24,10 +24,10 @@ export function LoginForm() {
     window.location.href = "/admin";
   }
 
-  return <form onSubmit={submit} className="grid gap-4">
+  return <form onSubmit={submit} className="auth-form">
     <label className="label">登录账号<input className="field" name="username" autoComplete="username" defaultValue="store_a_admin" /></label>
     <label className="label">密码<input className="field" name="password" type="password" autoComplete="current-password" placeholder="请输入播种时设置的密码" /></label>
-    {error && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+    {error && <p className="auth-feedback auth-feedback-error" role="alert">{error}</p>}
     <button className="btn btn-primary mt-1" disabled={loading}><LogIn size={17} />{loading ? "登录中..." : "登录后台"}</button>
   </form>;
 }

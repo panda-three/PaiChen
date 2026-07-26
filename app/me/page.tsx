@@ -1,23 +1,23 @@
 import Link from "next/link";
 import { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
+import { Heart, History, LogOut, PackageCheck, Store as StoreIcon, UserRound } from "lucide-react";
 import { signOut } from "@/auth";
 import { requireActor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
+import { canAccessPublicStore } from "@/lib/deployment-scope";
 
-export default async function CustomerCenter() {
-  const actor = await requireActor(); if (actor.role !== Role.CUSTOMER) redirect("/admin");
-  const [profiles,favorites,orders,history]=await Promise.all([
-    db.customerProfile.findMany({where:{customerId:actor.id},include:{store:true},orderBy:{createdAt:"desc"}}),
-    db.favorite.findMany({where:{customerId:actor.id},include:{product:{include:{store:true}}},orderBy:{createdAt:"desc"}}),
-    db.order.findMany({where:{customerId:actor.id},include:{store:true,items:true},orderBy:{createdAt:"desc"}}),
-    db.behaviorEvent.findMany({where:{customerId:actor.id,type:"PRODUCT_VIEW",productId:{not:null}},include:{product:{include:{store:true}}},orderBy:{createdAt:"desc"},take:50}),
+export default async function CustomerCenter({ searchParams }: { searchParams: Promise<{ store?: string; ref?: string }> }) {
+  const query = await searchParams; const actor = await requireActor(); if (actor.role !== Role.CUSTOMER) redirect("/admin");
+  if (query.store && !canAccessPublicStore(query.store)) redirect("/customer");
+  const selectedStore = query.store ? await db.store.findFirst({ where: { slug: query.store, isActive: true }, select: { id: true, slug: true, name: true } }) : null; const storeId = selectedStore?.id;
+  const [profiles, favorites, orders, history] = await Promise.all([
+    db.customerProfile.findMany({ where: { customerId: actor.id, ...(storeId ? { storeId } : {}) }, include: { store: true }, orderBy: { createdAt: "desc" } }),
+    db.favorite.findMany({ where: { customerId: actor.id, ...(storeId ? { storeId } : {}) }, include: { product: { include: { store: true } } }, orderBy: { createdAt: "desc" } }),
+    db.order.findMany({ where: { customerId: actor.id, ...(storeId ? { storeId } : {}) }, include: { store: true, items: true }, orderBy: { createdAt: "desc" } }),
+    db.behaviorEvent.findMany({ where: { customerId: actor.id, type: "PRODUCT_VIEW", productId: { not: null }, ...(storeId ? { storeId } : {}) }, include: { product: { include: { store: true } } }, orderBy: { createdAt: "desc" }, take: 30 }),
   ]);
-  return <main className="mx-auto min-h-screen max-w-4xl bg-[#f7f6f2] p-5"><header className="flex items-center justify-between"><div><h1 className="text-2xl font-bold">我的</h1><p className="muted mt-1 text-sm">{actor.name} · {actor.phone}</p></div><form action={async()=>{"use server";await signOut({redirectTo:"/customer"});}}><button className="btn">退出登录</button></form></header>
-    <section className="mt-6 grid gap-3 md:grid-cols-3">{profiles.map(item=><div className="panel p-4" key={item.id}><strong>{item.store.name}</strong><p className="muted mt-2 text-sm">档案状态：{item.status}</p><Link className="mt-3 inline-block text-sm text-[#176b45]" href={`/s/${item.store.slug}`}>进入店铺 →</Link></div>)}</section>
-    <h2 className="mt-8 text-lg font-bold">我的订单</h2><section className="panel table-wrap mt-3"><table><thead><tr><th>订单</th><th>店铺</th><th>商品</th><th>状态</th><th>时间</th></tr></thead><tbody>{orders.map(item=><tr key={item.id}><td>{item.orderNo}</td><td>{item.store.name}</td><td>{item.items.map(x=>`${x.productName} × ${x.quantity}`).join("、")}</td><td>{item.status}</td><td>{formatDate(item.createdAt)}</td></tr>)}</tbody></table>{!orders.length&&<div className="empty">暂无订单</div>}</section>
-    <h2 className="mt-8 text-lg font-bold">我的收藏</h2><div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">{favorites.map(item=><Link href={`/s/${item.product.store.slug}`} className="panel overflow-hidden" key={item.id}><img src={item.product.mainImageUrl} alt="" className="aspect-square w-full object-cover"/><div className="p-3 text-sm font-bold">{item.product.name}</div></Link>)}</div>
-    <h2 className="mt-8 text-lg font-bold">浏览记录</h2><div className="mt-3 grid gap-2">{history.map(item=><div className="panel flex items-center gap-3 p-3" key={item.id}><img src={item.product?.mainImageUrl} alt="" className="size-12 rounded object-cover"/><div><strong className="text-sm">{item.product?.name??"已失效商品"}</strong><p className="muted text-xs">{item.product?.store.name} · {formatDate(item.createdAt)}</p></div></div>)}</div>
-  </main>;
+  const back = selectedStore ? `/s/${selectedStore.slug}${query.ref ? `?ref=${encodeURIComponent(query.ref)}` : ""}` : profiles[0] ? `/s/${profiles[0].store.slug}` : "/customer";
+  return <div className="public-desktop"><main className="public-phone public-me"><header><div className="public-avatar"><UserRound/></div><div><h1>{actor.name}</h1><p>{actor.phone}</p></div><form action={async () => { "use server"; await signOut({ redirectTo: "/customer" }); }}><button aria-label="退出登录"><LogOut/></button></form></header><nav className="public-me-summary"><a href="#orders"><PackageCheck/><b>{orders.length}</b><span>意向单</span></a><a href="#favorites"><Heart/><b>{favorites.length}</b><span>收藏</span></a><a href="#history"><History/><b>{history.length}</b><span>足迹</span></a></nav><section><h2><StoreIcon/> 我的店铺</h2>{profiles.map((item) => <Link className="public-profile" href={`/s/${item.store.slug}`} key={item.id}><span>{item.store.name}</span><small>{item.status === "ACTIVE" ? "已激活" : "审核中"}</small></Link>)}</section><section id="orders"><h2>我的意向单</h2>{orders.map((order) => <article className="public-order" key={order.id}><header><b>{order.store.name}</b><span>{order.status}</span></header><p>{order.items.map((item) => `${item.productName} × ${item.quantity}`).join("、")}</p><small>{order.orderNo} · {formatDate(order.createdAt)}</small></article>)}{!orders.length && <div className="public-empty">暂无意向单</div>}</section><section id="favorites"><h2>我的收藏</h2><div className="public-grid">{favorites.map((item) => <Link className="public-product" href={`/s/${item.product.store.slug}/product/${item.product.id}`} key={item.id}><img src={item.product.mainImageUrl} alt=""/><div><h3>{item.product.name}</h3></div></Link>)}</div>{!favorites.length && <div className="public-empty">暂无收藏</div>}</section><section id="history"><h2>最近浏览</h2>{history.map((item) => <Link className="public-history" href={item.product ? `/s/${item.product.store.slug}/product/${item.product.id}` : back} key={item.id}><img src={item.product?.mainImageUrl} alt=""/><span>{item.product?.name || "商品已失效"}</span><small>{formatDate(item.createdAt)}</small></Link>)}</section><Link className="public-back-store" href={back}>返回店铺</Link></main></div>;
 }

@@ -22,6 +22,14 @@ function fieldError(error: z.ZodError) {
   return error.issues[0]?.message ?? "提交内容不正确";
 }
 
+function moneyInput(raw: string, label: string): string;
+function moneyInput(raw: string, label: string, optional: true): string | null;
+function moneyInput(raw: string, label: string, optional = false) {
+  if (!raw && optional) return null;
+  if (!/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(raw)) throw new Error(`${label}必须是非负金额，且最多保留两位小数`);
+  return raw;
+}
+
 function fail(path: string, message: string): never {
   redirect(`${path}?error=${encodeURIComponent(message)}`);
 }
@@ -216,15 +224,59 @@ export async function toggleProduct(data: FormData) {
   revalidatePath("/admin/products"); revalidatePath(`/s/${product.store.slug}`);
 }
 
+export async function saveOrderSalesInfo(data: FormData) {
+  const actor = await requireActor([Role.STORE_ADMIN]);
+  const id = text(data, "id");
+  const path = `/admin/orders/${id}`;
+  const order = await db.order.findFirst({ where: { id, storeId: actor.storeId! }, include: { items: true } });
+  if (!order) fail("/admin/orders", "订单不存在");
+  let shippingFee: string;
+  let installationFee: string;
+  const itemValues: Array<{ id: string; salePrice: string | null; color: string; remark: string }> = [];
+  try {
+    shippingFee = moneyInput(text(data, "shippingFee"), "运费");
+    installationFee = moneyInput(text(data, "installationFee"), "安装费");
+    for (const item of order.items) {
+      const salePrice = moneyInput(text(data, `salePrice:${item.id}`), `${item.productName}的成交单价`, true);
+      const color = text(data, `color:${item.id}`);
+      const remark = text(data, `remark:${item.id}`);
+      if (color.length > 50) throw new Error("颜色不能超过 50 个字符");
+      if (remark.length > 200) throw new Error("商品备注不能超过 200 个字符");
+      if (order.status === OrderStatus.WON && salePrice == null) throw new Error("已成交订单的每件商品都必须填写成交单价");
+      itemValues.push({ id: item.id, salePrice, color, remark });
+    }
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : "销售单信息不正确");
+  }
+  const changes: Array<{ orderId: string; actorId: string; field: string; beforeValue: string | null; afterValue: string | null }> = [];
+  const before = { shippingFee: order.shippingFee.toString(), installationFee: order.installationFee.toString(), items: order.items.map((item) => ({ id: item.id, salePrice: item.salePrice?.toString() ?? null, color: item.color, remark: item.remark })) };
+  if (order.shippingFee.toString() !== shippingFee!) changes.push({ orderId: id, actorId: actor.id, field: "shippingFee", beforeValue: order.shippingFee.toString(), afterValue: shippingFee! });
+  if (order.installationFee.toString() !== installationFee!) changes.push({ orderId: id, actorId: actor.id, field: "installationFee", beforeValue: order.installationFee.toString(), afterValue: installationFee! });
+  await db.$transaction(async (tx) => {
+    await tx.order.update({ where: { id }, data: { shippingFee: shippingFee!, installationFee: installationFee! } });
+    for (const value of itemValues) {
+      const current = order.items.find((item) => item.id === value.id)!;
+      const fields = [["salePrice", current.salePrice?.toString() ?? null, value.salePrice], ["color", current.color, value.color], ["remark", current.remark, value.remark]] as const;
+      for (const [field, beforeValue, afterValue] of fields) if (beforeValue !== afterValue) changes.push({ orderId: id, actorId: actor.id, field: `item.${value.id}.${field}`, beforeValue, afterValue });
+      await tx.orderItem.update({ where: { id: value.id }, data: { salePrice: value.salePrice, color: value.color, remark: value.remark } });
+    }
+    if (changes.length) await tx.orderChange.createMany({ data: changes });
+  });
+  const after = { shippingFee: shippingFee!, installationFee: installationFee!, items: itemValues };
+  if (changes.length) await audit({ actorId: actor.id, storeId: actor.storeId, action: "编辑销售单信息", entityType: "Order", entityId: id, before, after });
+  revalidatePath(path);
+}
+
 export async function updateOrderStatus(data: FormData) {
   const actor = await requireActor([Role.STORE_ADMIN]);
   const id = text(data, "id");
   const status = z.nativeEnum(OrderStatus).safeParse(text(data, "status"));
   if (!status.success) fail(`/admin/orders/${id}`, "订单状态不正确");
-  const order = await db.order.findFirst({ where: { id, storeId: actor.storeId! } });
+  const order = await db.order.findFirst({ where: { id, storeId: actor.storeId! }, include: { items: true } });
   if (!order) fail("/admin/orders", "订单不存在");
+  if (status.data === OrderStatus.WON && order.items.some((item) => item.salePrice == null)) fail(`/admin/orders/${id}`, "请先补齐每件商品的成交单价");
   if (order.status !== status.data) {
-    await db.$transaction([db.order.update({ where: { id }, data: { status: status.data } }), db.orderChange.create({ data: { orderId: id, actorId: actor.id, field: "status", beforeValue: order.status, afterValue: status.data } })]);
+    await db.$transaction([db.order.update({ where: { id }, data: { status: status.data, ...(status.data === OrderStatus.WON && !order.soldAt ? { soldAt: new Date() } : {}) } }), db.orderChange.create({ data: { orderId: id, actorId: actor.id, field: "status", beforeValue: order.status, afterValue: status.data } })]);
     await audit({ actorId: actor.id, storeId: actor.storeId, action: "订单状态变更", entityType: "Order", entityId: id, before: { status: order.status }, after: { status: status.data } });
   }
   revalidatePath(`/admin/orders/${id}`); revalidatePath("/admin/orders");

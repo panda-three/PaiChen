@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { formatPrice } from "@/lib/format";
 import { FormError, PageHeader } from "@/components/page-header";
 import { saveProduct, toggleProduct } from "../actions";
+import { bulkProducts } from "../phase-one-actions";
+import { ProductSelectAll } from "./product-select-all";
 
 type Params = { q?: string; category?: string; status?: string; edit?: string; error?: string };
 
@@ -16,8 +18,8 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const query = await searchParams;
   const where = {
     storeId, isDeleted: false,
-    ...(query.q ? { OR: [{ name: { contains: query.q } }, { code: { contains: query.q } }] } : {}),
-    ...(query.category ? { categoryId: query.category } : {}),
+    ...(query.q ? { OR: [{ name: { contains: query.q } }, { code: { contains: query.q } }, { variants: { some: { OR: [{ name: { contains: query.q } }, { code: { contains: query.q } }, { specification: { contains: query.q } }] } } }] } : {}),
+    ...(query.category === "uncategorized" ? { categoryId: null } : query.category ? { categoryId: query.category } : {}),
     ...(query.status === "published" ? { isPublished: true } : query.status === "draft" ? { isPublished: false } : {}),
   };
   const [products, categories, editing] = await Promise.all([
@@ -50,11 +52,17 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       </form>
     </details>
     <form className="panel mb-5 grid gap-3 p-4 md:grid-cols-[1fr_220px_160px_auto]">
-      <input className="field" name="q" defaultValue={query.q} placeholder="搜索商品名称或编码" />
-      <select className="field" name="category" defaultValue={query.category}><option value="">全部分类</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+      <input className="field" name="q" defaultValue={query.q} placeholder="搜索名称、型号或规格" />
+      <select className="field" name="category" defaultValue={query.category}><option value="">全部分类</option><option value="uncategorized">未分类</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
       <select className="field" name="status" defaultValue={query.status}><option value="">全部状态</option><option value="published">已上架</option><option value="draft">已下架</option></select>
       <button className="btn btn-primary">筛选</button>
     </form>
-    <section className="panel table-wrap"><table><thead><tr><th>商品</th><th>来源/编码</th><th>分类</th><th>规格</th><th>参考价格/库存</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>{products.map((product) => <tr key={product.id}><td><div className="flex min-w-56 items-center gap-3"><img src={product.mainImageUrl} alt="" className="size-12 rounded object-cover" /><strong>{product.name}</strong></div></td><td><span className="badge badge-off">{product.source}</span><div className="mt-1">{product.code}</div></td><td>{product.category?.name ?? "未分类"}</td><td>{product.variants.map(v=>v.name).join("、") || product.specification}</td><td>{formatPrice(product.price)}<div className="muted text-xs">库存 {product.referenceStock ?? "未设"}</div></td><td>{product.sort}</td><td><span className={`badge ${product.isPublished ? "" : "badge-off"}`}>{product.isPublished ? "已上架" : "已下架"}</span></td><td><div className="actions"><Link className="btn min-h-8 px-2 text-xs" href={`/admin/products?edit=${product.id}`}><Pencil size={14} />编辑</Link><form action={toggleProduct}><input type="hidden" name="id" value={product.id} /><button className="btn min-h-8 px-2 text-xs"><Power size={14} />{product.isPublished ? "下架" : "上架"}</button></form></div></td></tr>)}</tbody></table>{!products.length && <div className="empty">没有符合条件的商品。</div>}</section>
+    {actor.role === Role.STORE_ADMIN && <form id="bulk-product-form" action={bulkProducts} className="panel mb-3 flex flex-wrap items-center gap-3 p-3">
+      <ProductSelectAll count={products.length} />
+      <input type="hidden" name="operation" value="category" />
+      <select className="field max-w-64" name="categoryId" required defaultValue=""><option value="">选择启用分类</option>{categories.filter((category) => category.isActive).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+      <button className="btn btn-primary">批量分配分类</button>
+    </form>}
+    <section className="panel table-wrap"><table><thead><tr>{actor.role === Role.STORE_ADMIN && <th aria-label="选择商品" className="w-10"/>}<th>商品</th><th>来源/编码</th><th>分类</th><th>规格</th><th>参考价格/库存</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>{products.map((product) => <tr key={product.id}>{actor.role === Role.STORE_ADMIN && <td><input data-product-selection form="bulk-product-form" type="checkbox" name="ids" value={product.id} aria-label={`选择${product.name}`} /></td>}<td><div className="flex min-w-56 items-center gap-3"><img src={product.mainImageUrl} alt="" className="size-12 rounded object-cover" /><strong>{product.name}</strong></div></td><td><span className="badge badge-off">{product.source}</span><div className="mt-1">{product.code}</div></td><td>{product.category?.name ?? "未分类"}</td><td>{product.variants.map(v=>[v.name,v.specification].filter(Boolean).join(" · ")).join("、") || product.specification}</td><td>{formatPrice(product.price)}<div className="muted text-xs">库存 {product.referenceStock ?? "未设"}</div></td><td>{product.sort}</td><td><span className={`badge ${product.isPublished ? "" : "badge-off"}`}>{product.isPublished ? "已上架" : "已下架"}</span></td><td><div className="actions"><Link className="btn min-h-8 px-2 text-xs" href={`/admin/products?edit=${product.id}`}><Pencil size={14} />编辑</Link><form action={toggleProduct}><input type="hidden" name="id" value={product.id} /><button className="btn min-h-8 px-2 text-xs"><Power size={14} />{product.isPublished ? "下架" : "上架"}</button></form></div></td></tr>)}</tbody></table>{!products.length && <div className="empty">没有符合条件的商品。</div>}</section>
   </>;
 }

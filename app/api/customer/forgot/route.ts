@@ -3,11 +3,13 @@ import { hash } from "bcryptjs";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { canAccessPublicStore } from "@/lib/deployment-scope";
 
 const schema = z.object({ storeSlug: z.string(), phone: z.string().regex(/^1\d{10}$/), newPassword: z.string().min(8).max(72) });
 export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "信息格式不正确" }, { status: 400 });
+  if (!canAccessPublicStore(parsed.data.storeSlug)) return Response.json({ error: "Preview 仅允许测试店铺写入" }, { status: 403 });
   const [store, customer] = await Promise.all([db.store.findUnique({ where: { slug: parsed.data.storeSlug } }), db.user.findFirst({ where: { username: parsed.data.phone, role: Role.CUSTOMER } })]);
   if (!store || !customer) return Response.json({ error: "未找到客户账号" }, { status: 404 });
   const profile = await db.customerProfile.findUnique({ where: { storeId_customerId: { storeId: store.id, customerId: customer.id } } });

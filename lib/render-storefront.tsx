@@ -4,8 +4,10 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { Storefront } from "@/app/s/[slug]/storefront";
 import { parsePageConfig } from "@/lib/page-config";
+import { canAccessPublicStore } from "@/lib/deployment-scope";
 
 export async function renderStorefront(slug:string,pageSlug:string|undefined,ref:string|undefined){
+  if(!canAccessPublicStore(slug))notFound();
   const store=await db.store.findUnique({where:{slug}});if(!store)notFound();if(!store.isActive)return <main className="grid min-h-screen place-items-center"><h1>店铺暂不可用</h1></main>;
   const session=await auth();const customerId=session?.user?.role===Role.CUSTOMER?session.user.id:null;
   const [categories,products,employee,page,favorites]=await Promise.all([

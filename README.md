@@ -8,6 +8,10 @@
 
 - `DATABASE_URL`：Transaction pooler，端口 `6543`，供 Vercel 运行时使用；追加 `pgbouncer=true&connection_limit=1`。
 - `DIRECT_URL`：Session pooler，端口 `5432`，供 Prisma 建表使用。也可使用 Direct connection，但本地网络必须支持 IPv6。
+- `SUPABASE_URL`：Supabase 项目 URL，供服务端 Storage 客户端使用。
+- `SUPABASE_SERVICE_ROLE_KEY`：仅服务端使用的 service role 密钥，不得使用 `NEXT_PUBLIC_` 前缀或传入浏览器。
+- `DEFAULT_PUBLIC_STORE_SLUG`：根路径 `/` 展示的默认店铺 slug。
+- `PREVIEW_STORE_SLUG`：Vercel Preview 唯一允许访问和写入的测试店铺 slug。
 
 本地复制 `.env.example` 为 `.env`，填入真实地址，并生成认证密钥：
 
@@ -26,6 +30,8 @@ npm run db:seed
 npm run dev
 ```
 
+在 Supabase SQL Editor 执行 [`supabase/product-storage.sql`](supabase/product-storage.sql)，创建私有临时 Excel 桶 `product-imports` 和公开商品图片桶 `product-images`。建议再为 `product-imports` 配置一天后清理的生命周期规则，兜底清除上传成功但尚未发起导入的文件。
+
 已有 MVP 生产库不要再执行 `db push`。首次切换迁移管理时，先备份并在脱敏副本演练，然后登记现有结构 baseline，再执行只增不删的第一阶段迁移：
 
 ```bash
@@ -38,7 +44,10 @@ npm run db:deploy
 打开：
 
 - 后台登录：<http://localhost:3000/login>
-- H5 示例：<http://localhost:3000/s/liangchen?ref=staff-ruan>
+- 默认 H5：<http://localhost:3000/>
+- 员工分享 H5：<http://localhost:3000/s/liangchen?ref=staff-ruan>
+
+公开路由包括 `/s/:slug` 首页、`category`、`search`、`product/:id`、`cart`、`ai`，以及 `/me?store=:slug` 客户中心。购物车只保存在浏览器本地并按店铺隔离；提交的是购买意向，不会在线支付或扣减库存。
 
 ## 演示账号
 
@@ -75,8 +84,14 @@ npm run db:seed    # 重置本地演示数据
 - `AUTH_SECRET`：使用 `openssl rand -base64 32` 生成
 - `AUTH_TRUST_HOST`：`true`
 - `CRON_SECRET`：用于每日经营汇总与 365 天原始行为清理的随机密钥
+- `SUPABASE_URL`：Supabase 项目 URL
+- `SUPABASE_SERVICE_ROLE_KEY`：仅配置在服务端的 service role 密钥
+- `DEFAULT_PUBLIC_STORE_SLUG`：Production 默认公开店铺
+- `PREVIEW_STORE_SLUG`：Preview 测试店铺（Production 可不配置）
 
 不要将 `SEED_PASSWORD` 配置到 Vercel，也不要把 `prisma db push` 或 `db:seed` 放入 Vercel Build Command。项目保持默认的 `npm run build`。
+
+Preview 必须使用与 Production 不同的 `AUTH_SECRET`，并在 Vercel Dashboard 开启 Deployment Protection。验收时确认测试店铺可访问、其他店铺公开页返回 404、其他店铺写入返回 403，平台/企业/其他店铺后台会话不能进入 Preview 前台。
 
 首次部署前，在可信任的本地终端使用相同的 `DIRECT_URL` 执行迁移。已有 MVP 库先按上文登记 baseline；全新库直接部署全部迁移：
 
@@ -88,7 +103,7 @@ npm run db:deploy
 
 ### Supabase 访问保护
 
-本项目通过 Next.js 服务端的 Prisma 访问数据库，不需要 Supabase anon key 或 service-role key。初始化后可在 Supabase SQL Editor 执行以下语句，阻止浏览器端角色直接访问这些表：
+本项目通过 Next.js 服务端的 Prisma 访问数据库；商品图片导入额外通过服务端 service role 访问 Storage，不需要 anon key。初始化后可在 Supabase SQL Editor 执行以下语句，阻止浏览器端角色直接访问这些表：
 
 ```sql
 alter table public."Store" enable row level security;
@@ -127,6 +142,6 @@ revoke all on tables from anon, authenticated;
 
 ## 第一阶段边界
 
-- 图片当前使用外部 HTTP/HTTPS URL；如需自行上传图片，再接入 Supabase Storage。
-- Excel 支持 V2 多规格模板并兼容旧模板，导入商品默认下架。
+- 手工商品仍使用外部 HTTP/HTTPS 图片 URL；A:P Excel 批量导入支持 WPS `DISPIMG` 和标准 Excel 锚点图片，并存入 Supabase Storage。
+- 默认下载 A:P 图片模板，同时兼容 V2 多规格 URL 模板和旧模板；图片批量导入商品默认未分类、未上架。
 - 本轮只交付响应式 H5 与 PC 后台；不包含微信小程序、AI、在线支付、真实库存扣减、物流、退款及营销交易能力。

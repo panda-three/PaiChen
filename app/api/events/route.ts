@@ -2,11 +2,14 @@ import { BehaviorType, Role } from "@prisma/client";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { behaviorEventSchema } from "@/lib/validation";
+import { canAccessPublicStore, deploymentScope } from "@/lib/deployment-scope";
 
 export async function POST(request: Request) {
   const parsed = behaviorEventSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "事件不正确" }, { status: 400 });
   const input = parsed.data; const session = await auth();
+  if (!canAccessPublicStore(input.storeSlug)) return Response.json({ error: "Preview 仅允许测试店铺写入" }, { status: 403 });
+  if (deploymentScope().isPreview && session?.user && session.user.role !== Role.CUSTOMER) return Response.json({ error: "Preview 不允许后台账号写入前台事件" }, { status: 403 });
   const store = await db.store.findUnique({ where: { slug: input.storeSlug } });
   if (!store?.isActive) return Response.json({ error: "店铺不存在" }, { status: 404 });
   if (input.productId && !await db.product.findFirst({ where: { id: input.productId, storeId: store.id, isDeleted: false } })) return Response.json({ error: "商品不属于店铺" }, { status: 400 });

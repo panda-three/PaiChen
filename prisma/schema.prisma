@@ -156,6 +156,7 @@ model Product {
   name                String
   code                String
   mainImageUrl        String
+  galleryImageUrls    String                @default("")
   detailImageUrls     String                @default("")
   specification       String
   price               Decimal?
@@ -193,6 +194,8 @@ model ProductVariant {
   code                String
   price               Decimal?
   referenceStock      Int?
+  imageUrl             String?
+  specification       String?
   sort                Int                @default(0)
   enterpriseVariantId String?
   enterpriseVariant   EnterpriseVariant? @relation(fields: [enterpriseVariantId], references: [id], onDelete: SetNull)
@@ -367,6 +370,9 @@ model Order {
   customerPhone         String
   customerAddress       String        @default("")
   customerRemark        String        @default("")
+  shippingFee           Decimal       @default(0)
+  installationFee       Decimal       @default(0)
+  soldAt                DateTime?
   storeId               String
   store                 Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
   leadId                String
@@ -402,6 +408,8 @@ model OrderItem {
   specification String
   variantCode   String?
   price         Decimal?
+  salePrice     Decimal?
+  color         String          @default("")
   unit          String
   quantity      Int
   remark        String          @default("")
