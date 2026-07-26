@@ -1,20 +1,20 @@
 import { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { auth } from "@/admin-auth";
 import { db } from "@/lib/db";
 import { cookies } from "next/headers";
 
 export async function getActiveActor() {
   const session = await auth();
-  if (!session?.user?.id) return null;
+  if (!session?.user?.id || session.user.role === Role.CUSTOMER) return null;
   const actor = await db.user.findUnique({ where: { id: session.user.id }, include: { store: true } });
-  if (!actor?.isActive || (actor.store && !actor.store.isActive)) return null;
+  if (!actor?.isActive || actor.role === Role.CUSTOMER || (actor.store && !actor.store.isActive)) return null;
   return actor;
 }
 
 export async function requireActor(roles?: Role[]) {
   const actor = await getActiveActor();
-  if (!actor) redirect("/login");
+  if (!actor) redirect("/admin/login");
   if (roles && !roles.includes(actor.role)) redirect("/admin");
   return actor;
 }

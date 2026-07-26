@@ -1,10 +1,11 @@
-import { CustomerAccess } from "./customer-access";
-import { AuthShell } from "@/components/auth-shell";
+import { redirect } from "next/navigation";
 
-export default async function CustomerPage({ searchParams }: { searchParams: Promise<{ store?: string; ref?: string; mode?: string; returnTo?: string }> }) {
+export default async function CustomerPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const query = await searchParams;
-  const returnTo = query.returnTo?.startsWith("/") && !query.returnTo.startsWith("//") ? query.returnTo : query.store ? `/s/${encodeURIComponent(query.store)}` : "/me";
-  return <AuthShell eyebrow="CLIENT ACCESS" title="客户账号" description="登录后继续浏览收藏与订单；新账号需由来源员工或店铺管理员线下核验并激活。">
-    <CustomerAccess storeSlug={query.store ?? ""} refCode={query.ref ?? ""} initialMode={query.mode ?? "login"} returnTo={returnTo}/>
-  </AuthShell>;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (Array.isArray(value)) value.forEach((item) => params.append(key, item));
+    else if (value !== undefined) params.set(key, value);
+  }
+  redirect(`/login${params.size ? `?${params}` : ""}`);
 }

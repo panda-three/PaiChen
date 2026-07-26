@@ -1,6 +1,6 @@
 import { Role } from "@prisma/client";
 import { z } from "zod";
-import { auth } from "@/auth";
+import { auth } from "@/customer-auth";
 import { db } from "@/lib/db";
 import { canAccessPublicStore } from "@/lib/deployment-scope";
 

@@ -1,5 +1,5 @@
 import { AuthorizationStatus, CustomerStatus, ProductSource, Role } from "@prisma/client";
-import { auth } from "@/auth";
+import { auth } from "@/customer-auth";
 import { db } from "@/lib/db";
 import { publicOrderSchema } from "@/lib/validation";
 import { canAccessPublicStore } from "@/lib/deployment-scope";

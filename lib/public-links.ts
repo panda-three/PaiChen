@@ -8,5 +8,5 @@ export function storeHref(slug: string, path = "", ref?: string | null) {
 export function customerHref(slug: string, ref: string | null | undefined, returnTo: string) {
   const params = new URLSearchParams({ store: slug, returnTo });
   if (ref) params.set("ref", ref);
-  return `/customer?${params}`;
+  return `/login?${params}`;
 }

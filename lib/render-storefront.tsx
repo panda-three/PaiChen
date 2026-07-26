@@ -1,6 +1,6 @@
 import { AuthorizationStatus, ProductSource, Role } from "@prisma/client";
 import { notFound } from "next/navigation";
-import { auth } from "@/auth";
+import { auth } from "@/customer-auth";
 import { db } from "@/lib/db";
 import { Storefront } from "@/app/s/[slug]/storefront";
 import { parsePageConfig } from "@/lib/page-config";

@@ -1,6 +1,6 @@
 import { AuthorizationStatus, CustomerStatus, ProductSource, Role } from "@prisma/client";
 import { notFound } from "next/navigation";
-import { auth } from "@/auth";
+import { auth } from "@/customer-auth";
 import { db } from "@/lib/db";
 import { canAccessPublicStore, deploymentScope } from "@/lib/deployment-scope";
 

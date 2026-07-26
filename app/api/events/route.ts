@@ -1,5 +1,5 @@
 import { BehaviorType, Role } from "@prisma/client";
-import { auth } from "@/auth";
+import { auth } from "@/customer-auth";
 import { db } from "@/lib/db";
 import { behaviorEventSchema } from "@/lib/validation";
 import { canAccessPublicStore, deploymentScope } from "@/lib/deployment-scope";

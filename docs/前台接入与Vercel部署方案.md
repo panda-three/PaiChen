@@ -142,7 +142,8 @@ Preview：
 - 主域名指向同一个 Vercel 项目。
 - 前台入口为 `https://<domain>/`。
 - 后台入口为 `https://<domain>/admin`。
-- 登录入口继续使用 `https://<domain>/login`。
+- 客户注册/登录入口使用 `https://<domain>/login`。
+- 后台登录入口使用 `https://<domain>/admin/login`，并与客户会话使用不同 Cookie。
 - `www` 域名统一 301 重定向到主域名。
 - 前后台与 Route Handler 保持同源，不新增 CORS 配置。
 

@@ -1,11 +1,24 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { Role } from "@prisma/client";
+import { auth } from "@/customer-auth";
 import { AuthShell } from "@/components/auth-shell";
-import { LoginForm } from "./login-form";
+import { AuthEndpointProvider } from "@/components/auth-endpoint-provider";
+import { CUSTOMER_AUTH_BASE_PATH } from "@/lib/auth-scope";
+import { CustomerAccess } from "@/app/customer/customer-access";
 
-export default async function LoginPage() {
-  if ((await auth())?.user) redirect("/admin");
-  return <AuthShell eyebrow="STAFF ACCESS" title="后台账号登录" description="商品展示、客户开单与门店跟进后台" footer={<p>演示账号：platform_admin、store_a_admin、employee_a<br />密码为初始化数据库时设置的 <code>SEED_PASSWORD</code>。</p>}>
-    <LoginForm />
+function safeReturnTo(value: string | undefined, storeSlug: string | undefined) {
+  if (value?.startsWith("/") && !value.startsWith("//")) return value;
+  return storeSlug ? `/s/${encodeURIComponent(storeSlug)}` : "/me";
+}
+
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ store?: string; ref?: string; mode?: string; returnTo?: string }> }) {
+  const query = await searchParams;
+  const returnTo = safeReturnTo(query.returnTo, query.store);
+  const session = await auth();
+  if (session?.user?.role === Role.CUSTOMER) redirect(returnTo);
+  return <AuthShell eyebrow="CLIENT ACCESS" title="客户账号" description="登录后继续浏览收藏与订单；新账号需由来源员工或店铺管理员线下核验并激活。">
+    <AuthEndpointProvider basePath={CUSTOMER_AUTH_BASE_PATH}>
+      <CustomerAccess storeSlug={query.store ?? ""} refCode={query.ref ?? ""} initialMode={query.mode ?? "login"} returnTo={returnTo}/>
+    </AuthEndpointProvider>
   </AuthShell>;
 }

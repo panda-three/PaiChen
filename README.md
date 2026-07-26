@@ -43,11 +43,12 @@ npm run db:deploy
 
 打开：
 
-- 后台登录：<http://localhost:3000/login>
+- 客户注册/登录：<http://localhost:3000/login>
+- 后台登录：<http://localhost:3000/admin/login>
 - 默认 H5：<http://localhost:3000/>
 - 员工分享 H5：<http://localhost:3000/s/liangchen?ref=staff-ruan>
 
-公开路由包括 `/s/:slug` 首页、`category`、`search`、`product/:id`、`cart`、`ai`，以及 `/me?store=:slug` 客户中心。购物车只保存在浏览器本地并按店铺隔离；提交的是购买意向，不会在线支付或扣减库存。
+公开路由包括 `/s/:slug` 首页、`category`、`search`、`product/:id`、`cart`、`ai`，以及 `/login` 客户注册登录页和 `/me?store=:slug` 客户中心。后台统一从 `/admin/login` 登录；客户与后台会话相互独立。购物车只保存在浏览器本地并按店铺隔离；提交的是购买意向，不会在线支付或扣减库存。
 
 ## 演示账号
 
