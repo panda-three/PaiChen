@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { compare } from "bcryptjs";
 import { db } from "@/lib/db";
-import { getCustomerProfileForStore, normalizedOptional } from "@/lib/customer-settings";
+import { getCustomerProfileForStore } from "@/lib/customer-settings";
 import { customerProfileSettingsSchema } from "@/lib/validation";
 
 export async function PATCH(request: Request) {
@@ -17,10 +17,6 @@ export async function PATCH(request: Request) {
     const profile = await db.customerProfile.update({ where: { id: context.profile.id }, data: {
       name: parsed.data.name,
       phone: parsed.data.phone,
-      servicePhone: normalizedOptional(parsed.data.servicePhone),
-      serviceWechat: normalizedOptional(parsed.data.serviceWechat),
-      cardTitle: normalizedOptional(parsed.data.cardTitle),
-      cardBio: normalizedOptional(parsed.data.cardBio),
     } });
     return Response.json({ profile });
   } catch (error) {

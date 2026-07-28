@@ -17,6 +17,7 @@ const menu = {
   [Role.STORE_ADMIN]: [
     { href: "/admin/dashboard", label: "工作台", icon: BarChart3 },
     { href: "/admin/store", label: "店铺资料", icon: Settings },
+    { href: "/admin/share", label: "我的分享", icon: Link2 },
     { href: "/admin/employees", label: "员工管理", icon: Users },
     { href: "/admin/categories", label: "商品分类", icon: FolderTree },
     { href: "/admin/products", label: "商品管理", icon: Package },

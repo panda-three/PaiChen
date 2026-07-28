@@ -70,6 +70,7 @@ type Props = {
 };
 type DragData = { kind: "palette"; type: PageComponentV2["type"] } | { kind: "component" };
 type ImageAdItem = Extract<PageComponentV2, { type: "imageAd" }>["items"][number];
+type HeroSlide = Extract<PageComponentV2, { type: "heroCarousel" }>["slides"][number];
 
 function ActionSubmitButton({ children, pendingLabel, className }: { children: ReactNode; pendingLabel: string; className: string }) {
   const { pending } = useFormStatus();
@@ -92,7 +93,7 @@ function makeComponent(
     case "productGroupTabs": return { id, type, title: "精选商品", groups: [] };
     case "text": return { id, type, title: "品牌标题", body: "介绍您的空间与服务" };
     case "richText": return { id, type, html: "<p>富文本内容</p>" };
-    case "productSearch": return { id, type, placeholder: "搜索商品" };
+    case "productSearch": return { id, type, placeholder: "搜索商品", style: "default" };
     case "categoryNav": return { id, type, title: "商品分类" };
     case "productGrid": return { id, type, title: "精选商品", subtitle: "", layout: "default", limit: null, source: { mode: "all" } };
     case "contentCard": return { id, type, title: "设计灵感", body: "用材质与光线塑造理想之家" };
@@ -195,6 +196,19 @@ export function PageEditor({ page, publicUrl, store, employee, products, categor
     const items = itemId ? selected.items.map((item) => item.id === itemId ? { ...item, imageUrl: result.url } : item) : [...selected.items, { id: crypto.randomUUID(), imageUrl: result.url, alt: "" }];
     update({ items });
   }
+  async function uploadHeroImage(file: File | undefined, index?: number) {
+    if (!file || !selected || selected.type !== "heroCarousel") return;
+    setUploading(true);
+    const body = new FormData(); body.set("pageId", page.id); body.set("file", file);
+    const response = await fetch("/api/page-assets", { method: "POST", body });
+    const result = await response.json();
+    setUploading(false);
+    if (!response.ok) { alert(result.error ?? "图片上传失败"); return; }
+    const slides: HeroSlide[] = index === undefined
+      ? [...selected.slides, { imageUrl: result.url, alt: "" }]
+      : selected.slides.map((slide, at) => at === index ? { ...slide, imageUrl: result.url } : slide);
+    update({ slides });
+  }
   function add(type: PageComponentV2["type"]) {
     const component = makeComponent(type);
     setComponents((items) => insertPageComponent(items, component));
@@ -242,7 +256,11 @@ export function PageEditor({ page, publicUrl, store, employee, products, categor
     if (!selected) return <div className="empty">选择画布中的组件后配置</div>;
     const selectedProductIds = selected.type === "productGrid" && selected.source.mode === "selected" ? selected.source.productIds : [];
     return <div className="grid gap-4"><div><span className="badge">{labels[selected.type]}</span><p className="muted mt-2 text-xs">组件身份数据由当前店铺与分享员工动态绑定。</p></div><label className="label">页面主题色<input type="color" className="h-10 w-full" value={themeColor} onChange={(event) => setThemeColor(event.target.value)}/></label>
-      {selected.type === "heroCarousel" && <>{textField("轮播内容（每行：标题|副标题|图片地址|链接）", selected.slides.map((slide) => [slide.title,slide.subtitle,slide.imageUrl ?? "",slide.href].join("|")).join("\n"), (value) => update({ slides:value.split(/\r?\n/).filter(Boolean).slice(0,8).map((line) => { const [title="",subtitle="",imageUrl="",href=""] = line.split("|"); return {title,subtitle,imageUrl,href}; }) }), true)}</>}
+      {selected.type === "heroCarousel" && <div className="grid gap-3">
+        <p className="muted text-xs">最多 8 张，仅支持 JPG、PNG、WebP，单张不超过 5 MB。轮播只展示图片和分页控件。</p>
+        <label className="btn cursor-pointer"><ImagePlus size={16}/>{uploading ? "上传中…" : "添加图片"}<input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading || selected.slides.length >= 8} onChange={(event)=>void uploadHeroImage(event.target.files?.[0])}/></label>
+        {selected.slides.map((slide,index)=><article className="flex items-center gap-3 rounded border border-[#d6ddd8] p-3" draggable onDragStart={(event)=>event.dataTransfer.setData("text/plain",String(index))} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{const from=Number(event.dataTransfer.getData("text/plain"));const slides=[...selected.slides];const [moved]=slides.splice(from,1);slides.splice(index,0,moved);update({slides})}} key={`${slide.imageUrl}-${index}`}><GripVertical size={16}/><img className="h-16 w-24 rounded object-cover" src={slide.imageUrl} alt=""/><div className="ml-auto flex gap-2"><label className="btn cursor-pointer">替换<input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event)=>void uploadHeroImage(event.target.files?.[0],index)}/></label><button className="btn btn-danger" type="button" aria-label={`删除第 ${index+1} 张`} onClick={()=>update({slides:selected.slides.filter((_,at)=>at!==index)})}><Trash2 size={15}/></button></div></article>)}
+      </div>}
       {selected.type === "quickNav" && <>{textField("快捷入口（每行：标题|图标|页面ID或链接）", selected.items.map((item) => [item.title,item.icon ?? "building",item.pageId ?? item.href].join("|")).join("\n"), (value) => update({ items:value.split(/\r?\n/).filter(Boolean).slice(0,5).map((line) => { const [title="",icon="building",target=""] = line.split("|"); const page=pages.find((item)=>item.id===target); return {title,icon,pageId:page?.id,href:page?"":target}; }) }), true)}<p className="muted text-xs">图标：building / sofa / images / shield / phone。页面目标可从下方复制 ID。</p><div className="grid gap-1 text-xs">{pages.map((target)=><div key={target.id}><code>{target.id}</code> · {target.title}（{target.published?"已发布":"草稿"}）</div>)}</div></>}
       {selected.type === "announcement" && textField("公告（每行一条）", selected.messages.join("\n"), (value) => update({ messages:value.split(/\r?\n/).filter(Boolean).slice(0,10) }), true)}
       {selected.type === "seriesShowcase" && <>{textField("标题",selected.title,(value)=>update({title:value}))}<fieldset className="grid gap-2"><legend className="mb-2 text-sm font-semibold">展示分类（不选则自动取前两个）</legend>{categories.map((category)=><label className="flex items-center gap-2 text-sm" key={category.id}><input type="checkbox" checked={selected.categoryIds.includes(category.id)} onChange={(event)=>update({categoryIds:event.target.checked?[...selected.categoryIds,category.id]:selected.categoryIds.filter((id)=>id!==category.id)})}/>{category.name}</label>)}</fieldset></>}
@@ -267,7 +285,7 @@ export function PageEditor({ page, publicUrl, store, employee, products, categor
         </article>)}
       </div>}
       {selected.type === "productGroupTabs" && <div className="grid gap-3">{textField("章节标题",selected.title,(value)=>update({title:value}))}<button className="btn" type="button" onClick={()=>setShowGroupPicker(true)}>选择商品分组（{selected.groups.length}/15）</button>{selected.groups.map((group,index)=><article className="rounded border border-[#d6ddd8] p-3" draggable onDragStart={(event)=>event.dataTransfer.setData("text/plain",String(index))} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{const from=Number(event.dataTransfer.getData("text/plain"));const groups=[...selected.groups];const [moved]=groups.splice(from,1);groups.splice(index,0,moved);update({groups});}} key={group.categoryId}><div className="flex items-center gap-2"><GripVertical size={16}/><strong className="flex-1 text-sm">{categories.find((item)=>item.id===group.categoryId)?.name??"已失效分组"}</strong><button type="button" onClick={()=>{const groups=[...selected.groups];[groups[index-1],groups[index]]=[groups[index],groups[index-1]];update({groups})}} disabled={!index}><ChevronUp size={15}/></button><button type="button" onClick={()=>{const groups=[...selected.groups];[groups[index],groups[index+1]]=[groups[index+1],groups[index]];update({groups})}} disabled={index===selected.groups.length-1}><ChevronDown size={15}/></button><button type="button" onClick={()=>update({groups:selected.groups.filter((item)=>item.categoryId!==group.categoryId)})}><Trash2 size={15}/></button></div><input className="field mt-2" placeholder="菜单别名（可空）" value={group.alias??""} onChange={(event)=>update({groups:selected.groups.map((item)=>item.categoryId===group.categoryId?{...item,alias:event.target.value||undefined}:item)})}/><select className="field mt-2" value={group.limit??"all"} onChange={(event)=>update({groups:selected.groups.map((item)=>item.categoryId===group.categoryId?{...item,limit:event.target.value==="all"?null:Number(event.target.value)}:item)})}><option value="all">全部</option>{[6,8,10,12,16,20,30,50].map((value)=><option value={value} key={value}>{value} 个</option>)}</select></article>)}</div>}
-      {selected.type === "productSearch" && textField("提示文字", selected.placeholder, (value) => update({ placeholder: value }))}
+      {selected.type === "productSearch" && <>{textField("提示文字", selected.placeholder, (value) => update({ placeholder: value }))}<label className="label">样式<select className="field" value={selected.style} onChange={(event)=>update({style:event.target.value})}><option value="default">普通搜索</option><option value="heroOverlay">首屏悬浮</option></select></label></>}
       {selected.type === "categoryNav" && textField("标题", selected.title, (value) => update({ title: value }))}
       {selected.type === "productGrid" && <>{textField("标题", selected.title, (value) => update({ title: value }))}{textField("副标题", selected.subtitle, (value) => update({ subtitle: value }))}<label className="label">布局<select className="field" value={selected.layout} onChange={(event)=>update({layout:event.target.value})}><option value="default">标准商品卡</option><option value="yuncheng">云橙三列图片</option></select></label><label className="label">最多展示<input className="field" type="number" min="1" max="50" value={selected.limit??""} placeholder="全部" onChange={(event)=>update({limit:event.target.value?Number(event.target.value):null})}/></label><label className="label">商品来源<select className="field" value={selected.source.mode} onChange={(event) => { const mode = event.target.value; if (mode === "all") update({ source: { mode } }); if (mode === "category") update({ source: { mode, categoryId: categories[0]?.id ?? "" } }); if (mode === "selected") update({ source: { mode, productIds: [] } }); }}><option value="all">全部商品</option><option value="category">指定分类</option><option value="selected">指定商品</option></select></label>{selected.source.mode === "category" && <label className="label">分类<select className="field" value={selected.source.categoryId} onChange={(event) => update({ source: { mode: "category", categoryId: event.target.value } })}>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>}{selected.source.mode === "selected" && <fieldset className="grid gap-2"><legend className="mb-2 text-sm font-semibold">选择商品</legend>{products.map((product) => <label className="flex items-center gap-2 text-sm" key={product.id}><input type="checkbox" checked={selectedProductIds.includes(product.id)} onChange={(event) => update({ source: { mode: "selected", productIds: event.target.checked ? [...selectedProductIds, product.id] : selectedProductIds.filter((id) => id !== product.id) } })}/>{product.name}</label>)}</fieldset>}</>}
       {selected.type === "contentCard" && <>{textField("标题", selected.title, (value) => update({ title: value }))}{textField("正文", selected.body, (value) => update({ body: value }), true)}{textField("图片地址（可空）", selected.imageUrl ?? "", (value) => update({ imageUrl: value || undefined }))}</>}

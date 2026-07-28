@@ -60,11 +60,6 @@ tr:last-child td { border-bottom: 0; }
 .public-hero-track { display: flex; height: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .public-hero-track > * { position: relative; min-width: 100%; scroll-snap-align: start; }
 .public-hero img { width: 100%; height: 100%; object-fit: cover; }
-.public-hero span { position: absolute; inset: 0; background: linear-gradient(180deg,transparent 38%,rgb(23 17 13 / 72%)); }
-.public-hero div div { position: absolute; right: 28px; bottom: 72px; left: 28px; color: white; }
-.public-hero small { letter-spacing: .18em; font-size: 9px; opacity: .75; }
-.public-hero h1 { margin: 9px 0 4px; font-family: Georgia,"Songti SC",serif; font-size: 31px; font-weight: 500; }
-.public-hero p { margin: 0; font-size: 13px; opacity: .84; }
 .public-adviser { position: relative; z-index: 2; display: flex; min-height: 92px; margin: -45px 16px 16px; padding: 14px; align-items: center; gap: 11px; border: 1px solid rgb(255 255 255 / 45%); border-radius: 17px; background: rgb(54 45 39 / 75%); box-shadow: 0 14px 30px rgb(35 27 21 / 18%); color: white; backdrop-filter: blur(18px); }
 .public-adviser > img { width: 58px; height: 58px; border: 2px solid rgb(255 255 255 / 55%); border-radius: 50%; object-fit: cover; }
 .public-adviser > div { min-width: 0; flex: 1; }
@@ -97,7 +92,7 @@ tr:last-child td { border-bottom: 0; }
 
 /* Shared V4 home renderer */
 .public-hero { position: relative; height: auto; aspect-ratio: 4/3; }
-.public-hero-search { position: absolute; z-index: 4; top: 16px; right: 16px; left: 16px; display: flex; height: 40px; padding: 0 14px; align-items: center; gap: 8px; border: 1px solid rgb(255 255 255 / 55%); border-radius: 20px; background: rgb(255 255 255 / 86%); color: #756e68; backdrop-filter: blur(12px); font-size: 12px; }
+.public-search-heroOverlay { position: relative; z-index: 4; height: 40px; margin: 16px 16px -56px; border: 1px solid rgb(255 255 255 / 55%); border-radius: 20px; background: rgb(255 255 255 / 86%); color: #756e68; backdrop-filter: blur(12px); font-size: 12px; }
 .public-hero-track > * > i { position: absolute; right: 20px; bottom: 24px; color: white; font-size: 10px; font-style: normal; }
 .public-hero-dots { position: absolute; z-index: 4; bottom: 50px; left: 18px; display: flex; gap: 6px; }.public-hero-dots button { width: 6px; height: 6px; border: 0; border-radius: 50%; padding: 0; background: rgb(255 255 255 / 52%); }.public-hero-dots button.active { width: 22px; border-radius: 3px; background: white; }
 .public-adviser { min-height: 112px; margin-top: -38px; border-radius: 8px; }

@@ -43,7 +43,8 @@ export function liangchenHomeConfig(categoryIds: string[], pageIdsBySlug: Map<st
     version: 4,
     themeColor: "#30302e",
     components: [
-      { id: "liangchen-hero", type: "heroCarousel", slides: Array.from({ length: 4 }, (_, index) => ({ title: "", subtitle: "", imageUrl: `${root}/hero-${String(index + 1).padStart(2, "0")}.jpg`, href: "" })) },
+      { id: "liangchen-search", type: "productSearch", placeholder: "搜索商品", style: "heroOverlay" },
+      { id: "liangchen-hero", type: "heroCarousel", slides: Array.from({ length: 4 }, (_, index) => ({ imageUrl: `${root}/hero-${String(index + 1).padStart(2, "0")}.jpg`, alt: "" })) },
       { id: "liangchen-card", type: "employeeCard", style: "yuncheng" },
       { id: "liangchen-nav", type: "quickNav", items: nav.map(([title, slug, icon]) => ({ title, href: "", icon, pageId: pageIdsBySlug.get(slug) })) },
       { id: "liangchen-news", type: "announcement", messages: ["实木整装 618 预热开启，全屋木作 + 成品家具定制享整装专属特惠；名额有限，抓紧时间点击拨打首页电话咨询！！！"] },

@@ -1,6 +1,8 @@
-export type HomeCard = { name: string; phone: string | null; wechat: string | null; title: string | null; bio: string | null; avatarUrl: string | null; serviceQrUrl?: string | null };
+import { Role } from "@prisma/client";
 
-export function resolveHomeCard(defaultCard: HomeCard, profile: { name: string; phone: string; avatarUrl: string | null; servicePhone: string | null; serviceWechat: string | null; serviceQrUrl: string | null; cardTitle: string | null; cardBio: string | null } | null): HomeCard {
-  if (!profile) return defaultCard;
-  return { name: profile.name, phone: profile.servicePhone || profile.phone, wechat: profile.serviceWechat, title: profile.cardTitle, bio: profile.cardBio, avatarUrl: profile.avatarUrl, serviceQrUrl: profile.serviceQrUrl };
+export type HomeCard = { name: string; phone: string | null; wechat: string | null; title: string | null; bio: string | null; avatarUrl: string | null };
+
+export function resolveHomeCard(defaultCard: HomeCard, user: (HomeCard & { role: Role }) | null): HomeCard {
+  if (!user || (user.role !== Role.STORE_ADMIN && user.role !== Role.EMPLOYEE)) return defaultCard;
+  return { name: user.name, phone: user.phone, wechat: user.wechat, title: user.title, bio: user.bio, avatarUrl: user.avatarUrl };
 }

@@ -7,6 +7,21 @@ import { parsePageConfig } from "../lib/page-config";
 const catalog = { store: { slug: "liangchen", name: "良丞家具", logoUrl: null }, categories: [], products: [], customerActive: false };
 
 describe("liangchen public components", () => {
+  it("renders floating search separately and keeps the hero image-only", () => {
+    const config = parsePageConfig({ version: 4, themeColor: "#30302e", components: [
+      { id: "search", type: "productSearch", placeholder: "搜索良丞商品", style: "heroOverlay" },
+      { id: "hero", type: "heroCarousel", slides: [{ imageUrl: "/templates/liangchen/hero-01.jpg", title: "旧标题", subtitle: "旧副标题", href: "/legacy" }] },
+    ] });
+    const html = renderToStaticMarkup(<PublicHome catalog={catalog} config={config} employee={{ name: "默认名片", phone: null, wechat: null, title: null, bio: null, avatarUrl: null }} favoriteIds={[]}/>);
+    expect(html).toContain('class="public-search public-search-heroOverlay"');
+    expect(html.indexOf("public-search-heroOverlay")).toBeLessThan(html.indexOf("public-hero"));
+    expect(html).not.toContain("/legacy");
+    expect(html).not.toContain("旧标题");
+    expect(html).not.toContain("旧副标题");
+    expect(html).not.toContain("public-hero-search");
+    expect(html).toContain('<div class="public-hero-track"><div><img');
+  });
+
   it("renders the yuncheng employee card and hides unavailable contacts", () => {
     const config = parsePageConfig({ version: 4, themeColor: "#30302e", components: [{ id: "card", type: "employeeCard", style: "yuncheng" }] });
     const html = renderToStaticMarkup(<PublicHome catalog={catalog} config={config} employee={{ name: "方小姐", phone: "13800000000", wechat: null, title: "木作主理人", bio: "一站式整装", avatarUrl: "/templates/liangchen/avatar.png" }} favoriteIds={[]}/>);

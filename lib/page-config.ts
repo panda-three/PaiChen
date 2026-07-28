@@ -21,7 +21,7 @@ const internalOrHttpUrl = z.string().max(500).refine(
 );
 const navIcon = z.enum(["building", "sofa", "images", "shield", "phone"]);
 const navItem = z.object({ title: z.string().max(30), imageUrl: optionalUrl, href: z.string().max(300).default(""), icon: navIcon.optional(), pageId: id.optional() });
-const slide = z.object({ title: z.string().max(80).default(""), subtitle: z.string().max(120).default(""), imageUrl: optionalUrl, href: z.string().max(300).default("") });
+const slide = z.object({ imageUrl: optionalUrl, alt: z.string().max(100).default("") });
 const productGroupTab = z.object({
   categoryId: id,
   alias: z.string().trim().max(30).optional(),
@@ -55,7 +55,7 @@ export const pageComponentV4Schema = z.discriminatedUnion("type", [
   base.extend({ type: z.literal("employeeCard"), style: z.enum(["dark", "light", "yuncheng"]).default("dark") }),
   base.extend({ type: z.literal("text"), title: z.string().max(100), body: z.string().max(1000).default("") }),
   base.extend({ type: z.literal("richText"), html: z.string().max(20000) }),
-  base.extend({ type: z.literal("productSearch"), placeholder: z.string().max(50).default("搜索商品") }),
+  base.extend({ type: z.literal("productSearch"), placeholder: z.string().max(50).default("搜索商品"), style: z.enum(["default", "heroOverlay"]).default("default") }),
   base.extend({ type: z.literal("categoryNav"), title: z.string().max(100).default("商品分类") }),
   base.extend({ type: z.literal("productGrid"), title: z.string().max(100).default("精选商品"), subtitle: z.string().max(160).default(""), layout: z.enum(["default", "yuncheng"]).default("default"), limit: z.number().int().min(1).max(50).nullable().default(null), source: productSource }),
   base.extend({ type: z.literal("contentCard"), title: z.string().max(100), body: z.string().max(1000), imageUrl: imageUrl.optional() }),
@@ -159,6 +159,7 @@ export function blankPageConfig(): PageConfigV4 {
 
 export function homeTemplateConfig(): PageConfigV4 {
   return { version: 4, themeColor: "#30302e", components: [
+    { id: "template-search", type: "productSearch", placeholder: "搜索商品", style: "heroOverlay" },
     { id: "template-hero", type: "heroCarousel", slides: [] },
     { id: "template-card", type: "employeeCard", style: "yuncheng" },
     { id: "template-nav", type: "quickNav", items: ["品牌介绍", "系列产品", "空间案例", "售后保障", "专属接待"].map((title, index) => ({ title, href: "", icon: (["building", "sofa", "images", "shield", "phone"] as const)[index] })) },

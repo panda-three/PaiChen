@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   const customerId = session?.user?.role === Role.CUSTOMER ? session.user.id : null;
   await db.behaviorEvent.create({ data: { storeId: store.id, sessionId: input.sessionId, dedupeKey: `${input.sessionId}:${input.eventId}`, type: input.type as BehaviorType, customerId, productId: input.productId, pageSlug: input.pageSlug } }).catch(() => null);
   if (customerId && input.ref && ["FAVORITE","CART_ADD","ORDER_SUBMIT"].includes(input.type)) {
-    const employee = await db.user.findFirst({ where: { storeId: store.id, role: Role.EMPLOYEE, shareCode: input.ref, isActive: true } });
+    const employee = await db.user.findFirst({ where: { storeId: store.id, role: { in: [Role.STORE_ADMIN, Role.EMPLOYEE] }, shareCode: input.ref, isActive: true } });
     if (employee) await db.$transaction([db.customerAttribution.updateMany({ where: { storeId: store.id, customerId, isCurrent: true }, data: { isCurrent: false } }), db.customerAttribution.create({ data: { storeId: store.id, customerId, employeeId: employee.id, reason: input.type, isCurrent: true } })]);
   }
   return Response.json({ ok: true });

@@ -17,10 +17,9 @@ export async function POST(request: Request) {
   const upload = await storage.from(CUSTOMER_ASSETS_BUCKET).upload(path, await file.arrayBuffer(), { contentType: file.type, upsert: false });
   if (upload.error) return Response.json({ error: "图片上传失败，请稍后重试" }, { status: 502 });
   const publicUrl = storage.from(CUSTOMER_ASSETS_BUCKET).getPublicUrl(path).data.publicUrl;
-  const field = type === "avatar" ? "avatarUrl" : "serviceQrUrl";
-  const previousUrl = context.profile[field];
+  const previousUrl = context.profile.avatarUrl;
   try {
-    await db.customerProfile.update({ where: { id: context.profile.id }, data: { [field]: publicUrl } });
+    await db.customerProfile.update({ where: { id: context.profile.id }, data: { avatarUrl: publicUrl } });
   } catch (error) {
     await storage.from(CUSTOMER_ASSETS_BUCKET).remove([path]);
     throw error;
@@ -36,9 +35,8 @@ export async function DELETE(request: Request) {
   if (typeof body?.storeSlug !== "string" || !type) return Response.json({ error: "删除内容不正确" }, { status: 400 });
   const context = await getCustomerProfileForStore(body.storeSlug);
   if (!context) return Response.json({ error: "无权修改该店铺资料" }, { status: 403 });
-  const field = type === "avatar" ? "avatarUrl" : "serviceQrUrl";
-  const previousPath = storagePathFromPublicUrl(context.profile[field]);
-  await db.customerProfile.update({ where: { id: context.profile.id }, data: { [field]: null } });
+  const previousPath = storagePathFromPublicUrl(context.profile.avatarUrl);
+  await db.customerProfile.update({ where: { id: context.profile.id }, data: { avatarUrl: null } });
   if (previousPath) await customerAssetStorage().from(CUSTOMER_ASSETS_BUCKET).remove([previousPath]);
   return Response.json({ ok: true });
 }

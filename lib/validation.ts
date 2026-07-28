@@ -29,12 +29,10 @@ export const customerProfileSettingsSchema = z.object({
   storeSlug: z.string().min(1),
   name: z.string().trim().min(1, "昵称不能为空").max(50),
   phone: z.string().trim().regex(/^1\d{10}$/, "请输入正确的本店联系电话"),
-  servicePhone: z.string().trim().max(30).nullable().optional(),
-  serviceWechat: z.string().trim().max(60).nullable().optional(),
-  cardTitle: z.string().trim().max(50).nullable().optional(),
-  cardBio: z.string().trim().max(200).nullable().optional(),
   currentPassword: z.string().min(1).max(72).optional(),
-});
+}).strict();
+
+export const cardWechatSchema = z.string().trim().min(1, "请填写真实微信号").max(50, "微信号不能超过 50 个字符");
 
 export const customerPasswordSettingsSchema = z.object({
   currentPassword: z.string().min(1),

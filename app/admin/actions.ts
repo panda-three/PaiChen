@@ -10,6 +10,7 @@ import { getCatalogStore, requireActor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { orderScope } from "@/lib/scopes";
 import { homeTemplateConfig } from "@/lib/page-config";
+import { cardWechatSchema } from "@/lib/validation";
 
 const optionalUrl = z.union([z.literal(""), z.string().url("图片必须是有效的 HTTP/HTTPS URL")]);
 const phone = z.string().trim().regex(/^1\d{10}$|^[0-9+() -]{6,20}$/, "联系电话格式不正确");
@@ -60,7 +61,7 @@ export async function createStore(data: FormData) {
   if (exists) fail("/admin/stores", "登录账号已存在");
   const store = await db.$transaction(async (tx) => {
     const created = await tx.store.create({ data: { name: value.name, slug: value.slug, phone: value.phone, address: value.address } });
-    await tx.user.create({ data: { username: value.username, passwordHash: await hash(value.password, 12), role: Role.STORE_ADMIN, name: value.managerName, phone: value.phone, storeId: created.id } });
+    await tx.user.create({ data: { username: value.username, passwordHash: await hash(value.password, 12), role: Role.STORE_ADMIN, name: value.managerName, phone: value.phone, shareCode: randomUUID(), storeId: created.id } });
     const homepage = JSON.stringify(homeTemplateConfig());
     await tx.storePage.create({ data: { storeId: created.id, title: "店铺首页", slug: "home", category: "首页", draftJson: homepage, publishedJson: homepage, isHome: true, publishedAt: new Date() } });
     return created;
@@ -109,18 +110,20 @@ export async function saveStoreProfile(data: FormData) {
   const schema = z.object({ name: z.string().min(1, "请填写店铺名称"), logoUrl: optionalUrl, phone, address: z.string().min(1, "请填写店铺地址") });
   const parsed = schema.safeParse({ name: text(data, "name"), logoUrl: text(data, "logoUrl"), phone: text(data, "phone"), address: text(data, "address") });
   if (!parsed.success) fail("/admin/store", fieldError(parsed.error));
-  const defaultCardJson = JSON.stringify({ name: text(data,"cardName") || parsed.data.name, phone: text(data,"cardPhone") || parsed.data.phone, wechat: text(data,"cardWechat") || null, title: text(data,"cardTitle") || "店铺顾问", bio: text(data,"cardBio") || parsed.data.address, avatarUrl: text(data,"cardAvatarUrl") || parsed.data.logoUrl || null, shareCode: null });
+  const cardWechat = cardWechatSchema.safeParse(text(data,"cardWechat"));
+  if (!cardWechat.success) fail("/admin/store", fieldError(cardWechat.error));
+  const defaultCardJson = JSON.stringify({ name: text(data,"cardName") || parsed.data.name, phone: text(data,"cardPhone") || parsed.data.phone, wechat: cardWechat.data, title: text(data,"cardTitle") || "店铺顾问", bio: text(data,"cardBio") || parsed.data.address, avatarUrl: text(data,"cardAvatarUrl") || parsed.data.logoUrl || null, shareCode: null });
   await db.store.update({ where: { id: actor.storeId! }, data: { ...parsed.data, logoUrl: parsed.data.logoUrl || null, defaultCardJson } });
   revalidatePath("/admin/store"); revalidatePath(`/s/${actor.store!.slug}`);
 }
 
 const employeeSchema = z.object({
   name: z.string().min(1, "请填写员工姓名"), username: z.string().min(3, "登录账号至少 3 个字符"), phone,
-  wechat: z.string().max(50, "微信号不能超过 50 个字符"), title: z.string().max(30, "职位不能超过 30 个字符"),
+  wechat: cardWechatSchema, title: z.string().max(30, "职位不能超过 30 个字符"),
   bio: z.string().max(90, "名片文案不能超过 90 个字符"), avatarUrl: optionalUrl,
 });
 
-export async function saveMyCard(data:FormData){const actor=await requireActor([Role.EMPLOYEE]);const parsed=employeeSchema.safeParse({name:text(data,"name"),username:actor.username,phone:text(data,"phone"),wechat:text(data,"wechat"),title:text(data,"title"),bio:text(data,"bio"),avatarUrl:text(data,"avatarUrl")});if(!parsed.success)fail("/admin/share",fieldError(parsed.error));await db.user.update({where:{id:actor.id},data:{name:parsed.data.name,phone:parsed.data.phone,wechat:parsed.data.wechat,title:parsed.data.title,bio:parsed.data.bio,avatarUrl:parsed.data.avatarUrl||null}});revalidatePath("/admin/share");revalidatePath(`/s/${actor.store!.slug}`)}
+export async function saveMyCard(data:FormData){const actor=await requireActor([Role.STORE_ADMIN,Role.EMPLOYEE]);const parsed=employeeSchema.safeParse({name:text(data,"name"),username:actor.username,phone:text(data,"phone"),wechat:text(data,"wechat"),title:text(data,"title"),bio:text(data,"bio"),avatarUrl:text(data,"avatarUrl")});if(!parsed.success)fail("/admin/share",fieldError(parsed.error));await db.user.update({where:{id:actor.id},data:{name:parsed.data.name,phone:parsed.data.phone,wechat:parsed.data.wechat,title:parsed.data.title,bio:parsed.data.bio,avatarUrl:parsed.data.avatarUrl||null,shareCode:actor.shareCode??randomUUID()}});revalidatePath("/admin/share");revalidatePath(`/s/${actor.store!.slug}`)}
 
 export async function saveEmployee(data: FormData) {
   const actor = await requireActor([Role.STORE_ADMIN]);

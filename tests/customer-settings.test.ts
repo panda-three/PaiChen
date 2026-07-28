@@ -1,10 +1,10 @@
-import { CustomerStatus } from "@prisma/client";
+import { CustomerStatus, Role } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import { customerAssetPath, customerAssetType, storagePathFromPublicUrl } from "../lib/customer-assets";
 import { customerRegistrationBlock } from "../lib/customer-registration";
 import { CUSTOMER_SESSION_MAX_AGE_MS, isCustomerSessionActive, shouldTouchCustomerSession } from "../lib/customer-session";
 import { resolveHomeCard } from "../lib/home-card";
-import { customerPasswordSettingsSchema, customerProfileSettingsSchema } from "../lib/validation";
+import { cardWechatSchema, customerPasswordSettingsSchema, customerProfileSettingsSchema } from "../lib/validation";
 
 describe("customer registration activation policy", () => {
   it("activates new and pending customers without unblocking rejected or reset accounts", () => {
@@ -22,14 +22,22 @@ describe("customer settings validation", () => {
     expect(customerPasswordSettingsSchema.safeParse({ currentPassword:"old-password", newPassword:"short" }).success).toBe(false);
   });
 
-  it("accepts store-scoped profile and service fields", () => {
-    expect(customerProfileSettingsSchema.safeParse({ storeSlug:"demo", name:"张先生", phone:"13800000000", servicePhone:"0512-123456", serviceWechat:"service-demo", cardTitle:"空间顾问", cardBio:"全屋选品" }).success).toBe(true);
+  it("rejects legacy customer card fields", () => {
+    expect(customerProfileSettingsSchema.safeParse({ storeSlug:"demo", name:"张先生", phone:"13800000000", serviceWechat:"service-demo" }).success).toBe(false);
+    expect(customerProfileSettingsSchema.safeParse({ storeSlug:"demo", name:"张先生", phone:"13800000000" }).success).toBe(true);
   });
 
-  it("uses active store profile for the home card without consulting ref", () => {
+  it("requires a real operator-provided wechat value for cards", () => {
+    expect(cardWechatSchema.safeParse("").success).toBe(false);
+    expect(cardWechatSchema.parse("  liangchen-service  ")).toBe("liangchen-service");
+  });
+
+  it("uses only administrator or employee ref cards", () => {
     const fallback={name:"默认名片",phone:"400",wechat:null,title:"顾问",bio:"默认简介",avatarUrl:null};
-    const profile={name:"张先生",phone:"13800000000",avatarUrl:"https://example.com/a.jpg",servicePhone:"0512-123456",serviceWechat:"wx-demo",serviceQrUrl:null,cardTitle:"空间顾问",cardBio:"全屋选品"};
-    expect(resolveHomeCard(fallback,profile)).toMatchObject({name:"张先生",phone:"0512-123456",title:"空间顾问",bio:"全屋选品"});
+    const employee={name:"员工",phone:"13800000000",wechat:"wx-demo",title:"空间顾问",bio:"全屋选品",avatarUrl:null,role:Role.EMPLOYEE};
+    expect(resolveHomeCard(fallback,employee)).toMatchObject({name:"员工",wechat:"wx-demo"});
+    expect(resolveHomeCard(fallback,{...employee,name:"管理员",role:Role.STORE_ADMIN})).toMatchObject({name:"管理员"});
+    expect(resolveHomeCard(fallback,{...employee,name:"客户",role:Role.CUSTOMER})).toBe(fallback);
     expect(resolveHomeCard(fallback,null)).toBe(fallback);
   });
 });
@@ -54,8 +62,8 @@ describe("customer device sessions", () => {
 describe("customer assets", () => {
   it("accepts only known asset slots and produces store/customer scoped paths", () => {
     expect(customerAssetType("avatar")).toBe("avatar");
-    expect(customerAssetType("other")).toBeNull();
-    expect(customerAssetPath("s1","c1","serviceQr","image/webp")).toMatch(/^s1\/c1\/serviceQr-[\w-]+\.webp$/);
+    expect(customerAssetType("serviceQr")).toBeNull();
+    expect(customerAssetPath("s1","c1","avatar","image/webp")).toMatch(/^s1\/c1\/avatar-[\w-]+\.webp$/);
   });
 
   it("only parses paths from the customer assets public bucket", () => {

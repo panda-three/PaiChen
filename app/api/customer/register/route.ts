@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   if (!canAccessPublicStore(input.storeSlug)) return Response.json({ error: "Preview 仅允许测试店铺写入" }, { status: 403 });
   const store = await db.store.findFirst({ where: { slug: input.storeSlug, isActive: true, customerEnabled: true } });
   if (!store) return Response.json({ error: "店铺暂不开放客户注册" }, { status: 404 });
-  const sourceEmployee = input.ref ? await db.user.findFirst({ where: { storeId: store.id, role: Role.EMPLOYEE, shareCode: input.ref, isActive: true } }) : null;
+  const sourceEmployee = input.ref ? await db.user.findFirst({ where: { storeId: store.id, role: { in: [Role.STORE_ADMIN, Role.EMPLOYEE] }, shareCode: input.ref, isActive: true } }) : null;
   const existing = await db.user.findUnique({ where: { username: input.phone } });
   if (existing && existing.role !== Role.CUSTOMER) return Response.json({ error: "该手机号无法注册客户账号" }, { status: 409 });
   if (existing && !existing.isActive && existing.customerStatus !== CustomerStatus.PENDING) return Response.json({ error: "该客户账号已停用，请联系店铺处理" }, { status: 409 });
