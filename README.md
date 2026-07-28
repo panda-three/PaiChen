@@ -1,6 +1,6 @@
 # 云丞 AI 商城平台第一阶段
 
-基于 Next.js App Router、Tailwind CSS、Prisma 和 Supabase PostgreSQL 的多租户商城第一阶段，实现平台配额与代运营、企业商品授权、页面装修、客户审核与归属、多规格意向开单、经营分析及 Excel/图片导出。
+基于 Next.js App Router、Tailwind CSS、Prisma 和 Supabase PostgreSQL 的多租户商城第一阶段，实现平台配额与代运营、企业商品授权、页面装修、客户账号与归属、多规格意向开单、经营分析及 Excel/图片导出。
 
 ## 环境变量
 
@@ -30,7 +30,7 @@ npm run db:seed
 npm run dev
 ```
 
-在 Supabase SQL Editor 执行 [`supabase/product-storage.sql`](supabase/product-storage.sql)，创建私有临时 Excel 桶 `product-imports` 和公开商品图片桶 `product-images`。建议再为 `product-imports` 配置一天后清理的生命周期规则，兜底清除上传成功但尚未发起导入的文件。
+在 Supabase SQL Editor 执行 [`supabase/product-storage.sql`](supabase/product-storage.sql)，创建私有临时 Excel 桶 `product-imports`、公开商品图片桶 `product-images` 和公开只读的客户资料图片桶 `customer-assets`。建议再为 `product-imports` 配置一天后清理的生命周期规则，兜底清除上传成功但尚未发起导入的文件。
 
 已有 MVP 生产库不要再执行 `db push`。首次切换迁移管理时，先备份并在脱敏副本演练，然后登记现有结构 baseline，再执行只增不删的第一阶段迁移：
 
@@ -48,7 +48,7 @@ npm run db:deploy
 - 默认 H5：<http://localhost:3000/>
 - 员工分享 H5：<http://localhost:3000/s/liangchen?ref=staff-ruan>
 
-公开路由包括 `/s/:slug` 首页、`category`、`search`、`product/:id`、`cart`、`ai`，以及 `/login` 客户注册登录页和 `/me?store=:slug` 客户中心。后台统一从 `/admin/login` 登录；客户与后台会话相互独立。购物车只保存在浏览器本地并按店铺隔离；提交的是购买意向，不会在线支付或扣减库存。
+公开路由包括 `/s/:slug` 首页、`category`、`search`、`product/:id`、`cart`、`ai`，以及 `/login` 客户注册登录页、`/me?store=:slug` 客户中心和 `/me/settings?store=:slug` 账号设置。客户注册后直接激活并登录；忘记密码仍由店铺人工核验。客户与后台会话相互独立，客户设备会话有效期为 8 小时。购物车只保存在浏览器本地并按店铺隔离；提交的是购买意向，不会在线支付或扣减库存。
 
 ## 演示账号
 
@@ -126,6 +126,7 @@ alter table public."ProductSyncLog" enable row level security;
 alter table public."StorePage" enable row level security;
 alter table public."PageTemplate" enable row level security;
 alter table public."CustomerProfile" enable row level security;
+alter table public."CustomerSession" enable row level security;
 alter table public."CustomerAttribution" enable row level security;
 alter table public."OrderChange" enable row level security;
 alter table public."Favorite" enable row level security;

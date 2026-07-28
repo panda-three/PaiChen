@@ -21,15 +21,16 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical, ImagePlus, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useMemo, useState } from "react";
+import { useFormStatus } from "react-dom";
 import {
-  Storefront,
   type StorefrontEmployee,
   type StorefrontProduct,
   type StorefrontStore,
 } from "@/app/s/[slug]/storefront";
+import { PublicHome } from "@/app/s/[slug]/public-home";
 import {
   insertPageComponent,
   movePageComponent,
@@ -47,7 +48,8 @@ const labels: Record<PageComponentV2["type"], string> = {
   newProducts: "新品轮播",
   storeHeader: "店铺头部",
   employeeCard: "员工名片",
-  image: "图片广告",
+  imageAd: "图片广告",
+  productGroupTabs: "商品分组",
   text: "标题 / 正文",
   richText: "富文本",
   productSearch: "商品搜索",
@@ -59,7 +61,8 @@ const labels: Record<PageComponentV2["type"], string> = {
 };
 const types = Object.keys(labels) as PageComponentV2["type"][];
 
-type Category = { id: string; name: string };
+type Category = { id: string; name: string; productCount: number; createdAt: string };
+type PageLink = { id: string; title: string; slug: string };
 type Props = {
   page: { id: string; title: string; slug: string; config: PageConfigV2; published: boolean; isHome: boolean };
   publicUrl: string;
@@ -67,12 +70,17 @@ type Props = {
   employee: StorefrontEmployee;
   products: StorefrontProduct[];
   categories: Category[];
+  pages: PageLink[];
 };
 type DragData = { kind: "palette"; type: PageComponentV2["type"] } | { kind: "component" };
 
+function ActionSubmitButton({ children, pendingLabel, className }: { children: ReactNode; pendingLabel: string; className: string }) {
+  const { pending } = useFormStatus();
+  return <button className={className} disabled={pending}>{pending ? pendingLabel : children}</button>;
+}
+
 function makeComponent(
   type: PageComponentV2["type"],
-  products: StorefrontProduct[],
 ): PageComponentV2 {
   const id = crypto.randomUUID();
   switch (type) {
@@ -83,7 +91,8 @@ function makeComponent(
     case "newProducts": return { id, type, title: "当季新品", source: { mode: "all" } };
     case "storeHeader": return { id, type, style: "compact", subtitle: "家居美学 · 意向开单" };
     case "employeeCard": return { id, type, style: "dark" };
-    case "image": return { id, type, url: products[0]?.mainImageUrl ?? "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1200", alt: "图片广告" };
+    case "imageAd": return { id, type, items: [] };
+    case "productGroupTabs": return { id, type, title: "精选商品", groups: [] };
     case "text": return { id, type, title: "品牌标题", body: "介绍您的空间与服务" };
     case "richText": return { id, type, html: "<p>富文本内容</p>" };
     case "productSearch": return { id, type, placeholder: "搜索商品" };
@@ -158,22 +167,38 @@ function PhoneCanvas({ children, empty }: { children: ReactNode; empty: boolean 
   </div>;
 }
 
-export function PageEditor({ page, publicUrl, store, employee, products, categories }: Props) {
+export function PageEditor({ page, publicUrl, store, employee, products, categories, pages }: Props) {
   const [components, setComponents] = useState(page.config.components);
   const [themeColor, setThemeColor] = useState(page.config.themeColor);
   const [selectedId, setSelectedId] = useState(page.config.components[0]?.id ?? "");
   const [activeLabel, setActiveLabel] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [groupPage, setGroupPage] = useState(0);
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const selected = components.find((item) => item.id === selectedId);
-  const config = useMemo(() => JSON.stringify({ version: 3, themeColor, components }), [components, themeColor]);
+  const selectedGroups = selected?.type === "productGroupTabs" ? selected.groups : [];
+  const config = useMemo(() => JSON.stringify({ version: 4, themeColor, components }), [components, themeColor]);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const update = (patch: Partial<PageComponentV2>) => setComponents((items) => items.map((item) => item.id === selectedId ? { ...item, ...patch } as PageComponentV2 : item));
+  const update = (patch: Record<string, unknown>) => setComponents((items) => items.map((item) => item.id === selectedId ? { ...item, ...patch } as PageComponentV2 : item));
+  async function uploadAdImage(file: File | undefined, itemId?: string) {
+    if (!file || !selected || selected.type !== "imageAd") return;
+    setUploading(true);
+    const body = new FormData(); body.set("pageId", page.id); body.set("file", file);
+    const response = await fetch("/api/page-assets", { method: "POST", body });
+    const result = await response.json();
+    setUploading(false);
+    if (!response.ok) { alert(result.error ?? "图片上传失败"); return; }
+    const items = itemId ? selected.items.map((item) => item.id === itemId ? { ...item, imageUrl: result.url } : item) : [...selected.items, { id: crypto.randomUUID(), imageUrl: result.url, alt: "" }];
+    update({ items });
+  }
   function add(type: PageComponentV2["type"]) {
-    const component = makeComponent(type, products);
+    const component = makeComponent(type);
     setComponents((items) => insertPageComponent(items, component));
     setSelectedId(component.id);
   }
@@ -194,7 +219,7 @@ export function PageEditor({ page, publicUrl, store, employee, products, categor
     const overId = String(over.id);
     if (data?.kind === "palette") {
       if (overId !== CANVAS_ID && !components.some((item) => item.id === overId)) return;
-      const component = makeComponent(data.type, products);
+      const component = makeComponent(data.type);
       if (overId === CANVAS_ID) {
         setComponents((items) => insertPageComponent(items, component));
       } else {
@@ -212,7 +237,10 @@ export function PageEditor({ page, publicUrl, store, employee, products, categor
   }
 
   const textField = (label: string, value: string, onChange: (value: string) => void, multiline = false) => <label className="label">{label}{multiline ? <textarea className="field min-h-24" value={value} onChange={(event) => onChange(event.target.value)}/> : <input className="field" value={value} onChange={(event) => onChange(event.target.value)}/>}</label>;
+  const matchingCategories = categories.filter((item) => item.name.toLowerCase().includes(groupSearch.toLowerCase()));
+  const categoryPage = matchingCategories.slice(groupPage * 6, groupPage * 6 + 6);
   function Properties() {
+    if (showGroupPicker && selected?.type === "productGroupTabs") return <div className="grid gap-3"><div className="flex items-center justify-between"><strong>选择商品分组</strong><button type="button" aria-label="关闭" onClick={()=>setShowGroupPicker(false)}><X size={18}/></button></div><input className="field" placeholder="搜索分组" value={groupSearch} onChange={(event)=>{setGroupSearch(event.target.value);setGroupPage(0)}}/><div className="overflow-x-auto"><table><thead><tr><th>选择</th><th>分组</th><th>商品</th><th>创建</th></tr></thead><tbody>{categoryPage.map((category)=>{const checked=selectedGroups.some((item)=>item.categoryId===category.id);return <tr key={category.id}><td><input type="checkbox" checked={checked} disabled={!checked&&selectedGroups.length>=15} onChange={(event)=>update({groups:event.target.checked?[...selectedGroups,{categoryId:category.id,limit:null}]:selectedGroups.filter((item)=>item.categoryId!==category.id)})}/></td><td>{category.name}</td><td>{category.productCount}</td><td>{new Date(category.createdAt).toLocaleDateString("zh-CN")}</td></tr>})}</tbody></table></div><div className="flex justify-between"><button className="btn" type="button" disabled={!groupPage} onClick={()=>setGroupPage((value)=>value-1)}>上一页</button><button className="btn" type="button" disabled={(groupPage+1)*6>=matchingCategories.length} onClick={()=>setGroupPage((value)=>value+1)}>下一页</button></div><div className="flex justify-end gap-2"><button className="btn" type="button" onClick={()=>setShowGroupPicker(false)}>取消</button><button className="btn btn-primary" type="button" onClick={()=>setShowGroupPicker(false)}>确认</button></div></div>;
     if (!selected) return <div className="empty">选择画布中的组件后配置</div>;
     const selectedProductIds = selected.type === "productGrid" && selected.source.mode === "selected" ? selected.source.productIds : [];
     return <div className="grid gap-4"><div><span className="badge">{labels[selected.type]}</span><p className="muted mt-2 text-xs">组件身份数据由当前店铺与分享员工动态绑定。</p></div><label className="label">页面主题色<input type="color" className="h-10 w-full" value={themeColor} onChange={(event) => setThemeColor(event.target.value)}/></label>
@@ -221,11 +249,12 @@ export function PageEditor({ page, publicUrl, store, employee, products, categor
       {selected.type === "announcement" && textField("公告（每行一条）", selected.messages.join("\n"), (value) => update({ messages:value.split(/\r?\n/).filter(Boolean).slice(0,10) }), true)}
       {selected.type === "seriesShowcase" && <>{textField("标题",selected.title,(value)=>update({title:value}))}<fieldset className="grid gap-2"><legend className="mb-2 text-sm font-semibold">展示分类（不选则自动取前两个）</legend>{categories.map((category)=><label className="flex items-center gap-2 text-sm" key={category.id}><input type="checkbox" checked={selected.categoryIds.includes(category.id)} onChange={(event)=>update({categoryIds:event.target.checked?[...selected.categoryIds,category.id]:selected.categoryIds.filter((id)=>id!==category.id)})}/>{category.name}</label>)}</fieldset></>}
       {selected.type === "newProducts" && <>{textField("标题",selected.title,(value)=>update({title:value}))}<label className="label">商品来源<select className="field" value={selected.source.mode} onChange={(event)=>{const mode=event.target.value;if(mode==="all")update({source:{mode}});if(mode==="category")update({source:{mode,categoryId:categories[0]?.id??""}});if(mode==="selected")update({source:{mode,productIds:[]}})}}><option value="all">全部商品</option><option value="category">指定分类</option><option value="selected">指定商品</option></select></label>{selected.source.mode==="category"&&<label className="label">分类<select className="field" value={selected.source.categoryId} onChange={(event)=>update({source:{mode:"category",categoryId:event.target.value}})}>{categories.map((category)=><option value={category.id} key={category.id}>{category.name}</option>)}</select></label>}{selected.source.mode==="selected"&&<fieldset className="grid gap-2">{products.map((product)=><label className="flex items-center gap-2 text-sm" key={product.id}><input type="checkbox" checked={selected.source.mode==="selected"&&selected.source.productIds.includes(product.id)} onChange={(event)=>{const ids=selected.source.mode==="selected"?selected.source.productIds:[];update({source:{mode:"selected",productIds:event.target.checked?[...ids,product.id]:ids.filter((id)=>id!==product.id)}})}}/>{product.name}</label>)}</fieldset>}</>}
-      {selected.type === "storeHeader" && <>{textField("副标题", selected.subtitle, (value) => update({ subtitle: value }))}<label className="label">样式<select className="field" value={selected.style} onChange={(event) => update({ style: event.target.value as "compact" | "hero" })}><option value="compact">紧凑</option><option value="hero">品牌展示</option></select></label></>}
+      {selected.type === "storeHeader" && <>{textField("店铺名称", selected.name ?? store.name, (value) => update({ name: value.trim() || undefined }))}<label className="label">店铺图片<select className="field" value={selected.imageSource?.type === "productMainImage" ? selected.imageSource.productId : "storeLogo"} onChange={(event) => update({ imageSource: event.target.value === "storeLogo" ? { type: "storeLogo" } : { type: "productMainImage", productId: event.target.value } })}><option value="storeLogo">使用店铺 Logo</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}（商品主图）</option>)}</select></label>{textField("副标题", selected.subtitle, (value) => update({ subtitle: value }))}<label className="label">样式<select className="field" value={selected.style} onChange={(event) => update({ style: event.target.value as "compact" | "hero" })}><option value="compact">紧凑</option><option value="hero">品牌展示</option></select></label></>}
       {selected.type === "employeeCard" && <label className="label">样式<select className="field" value={selected.style} onChange={(event) => update({ style: event.target.value as "dark" | "light" })}><option value="dark">深色</option><option value="light">浅色</option></select></label>}
       {selected.type === "text" && <>{textField("标题", selected.title, (value) => update({ title: value }))}{textField("正文", selected.body, (value) => update({ body: value }), true)}</>}
       {selected.type === "richText" && textField("安全富文本（HTML）", selected.html, (value) => update({ html: value }), true)}
-      {selected.type === "image" && <><label className="label">选择店铺素材<select className="field" value="" onChange={(event) => event.target.value && update({ url: event.target.value })}><option value="">选择 Logo 或商品图片</option>{store.logoUrl && <option value={store.logoUrl}>店铺 Logo</option>}{products.map((product) => <option key={product.id} value={product.mainImageUrl}>{product.name}</option>)}</select></label>{textField("图片 HTTP(S) 地址", selected.url, (value) => update({ url: value }))}{textField("替代文字", selected.alt, (value) => update({ alt: value }))}{textField("点击链接（可空）", selected.link ?? "", (value) => update({ link: value || undefined }))}</>}
+      {selected.type === "imageAd" && <div className="grid gap-3"><label className="btn cursor-pointer"><ImagePlus size={16}/>{uploading ? "上传中…" : "添加图片"}<input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading || selected.items.length >= 10} onChange={(event) => void uploadAdImage(event.target.files?.[0])}/></label>{selected.items.map((entry, index) => <article className="rounded border border-[#d6ddd8] p-3" draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", String(index))} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { const from = Number(event.dataTransfer.getData("text/plain")); const items = [...selected.items]; const [moved] = items.splice(from, 1); items.splice(index, 0, moved); update({ items }); }} key={entry.id}><div className="flex gap-3"><img className="size-16 rounded object-cover" src={entry.imageUrl} alt=""/><div className="grid flex-1 gap-2"><input className="field" value={entry.alt} maxLength={100} placeholder="提示文字" onChange={(event) => update({items:selected.items.map((item)=>item.id===entry.id?{...item,alt:event.target.value}:item)})}/><select className="field" value={entry.target?.type ?? "none"} onChange={(event) => { const type=event.target.value; const target=type==="product"?{type,productId:products[0]?.id??""}:type==="category"?{type,categoryId:categories[0]?.id??""}:type==="page"?{type,pageId:pages[0]?.id??""}:type==="custom"?{type,url:"/"}:undefined; update({items:selected.items.map((item)=>item.id===entry.id?{...item,target}:item)}); }}><option value="none">不跳转</option><option value="product">商品</option><option value="category">商品分组</option><option value="page">店铺页面</option><option value="custom">自定义链接</option></select></div></div>{entry.target?.type==="product"&&<select className="field mt-2" value={entry.target.productId} onChange={(event)=>update({items:selected.items.map((item)=>item.id===entry.id?{...item,target:{type:"product",productId:event.target.value}}:item)})}>{products.map((product)=><option value={product.id} key={product.id}>{product.name}</option>)}</select>}{entry.target?.type==="category"&&<select className="field mt-2" value={entry.target.categoryId} onChange={(event)=>update({items:selected.items.map((item)=>item.id===entry.id?{...item,target:{type:"category",categoryId:event.target.value}}:item)})}>{categories.map((category)=><option value={category.id} key={category.id}>{category.name}</option>)}</select>}{entry.target?.type==="page"&&<select className="field mt-2" value={entry.target.pageId} onChange={(event)=>update({items:selected.items.map((item)=>item.id===entry.id?{...item,target:{type:"page",pageId:event.target.value}}:item)})}>{pages.map((link)=><option value={link.id} key={link.id}>{link.title}</option>)}</select>}{entry.target?.type==="custom"&&<input className="field mt-2" value={entry.target.url} placeholder="/s/... 或 https://..." onChange={(event)=>update({items:selected.items.map((item)=>item.id===entry.id?{...item,target:{type:"custom",url:event.target.value}}:item)})}/>}<div className="mt-2 flex justify-end gap-2"><label className="btn cursor-pointer">替换<input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event)=>void uploadAdImage(event.target.files?.[0],entry.id)}/></label><button className="btn btn-danger" type="button" onClick={()=>update({items:selected.items.filter((item)=>item.id!==entry.id)})}><Trash2 size={15}/></button></div></article>)}</div>}
+      {selected.type === "productGroupTabs" && <div className="grid gap-3">{textField("章节标题",selected.title,(value)=>update({title:value}))}<button className="btn" type="button" onClick={()=>setShowGroupPicker(true)}>选择商品分组（{selected.groups.length}/15）</button>{selected.groups.map((group,index)=><article className="rounded border border-[#d6ddd8] p-3" draggable onDragStart={(event)=>event.dataTransfer.setData("text/plain",String(index))} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{const from=Number(event.dataTransfer.getData("text/plain"));const groups=[...selected.groups];const [moved]=groups.splice(from,1);groups.splice(index,0,moved);update({groups});}} key={group.categoryId}><div className="flex items-center gap-2"><GripVertical size={16}/><strong className="flex-1 text-sm">{categories.find((item)=>item.id===group.categoryId)?.name??"已失效分组"}</strong><button type="button" onClick={()=>{const groups=[...selected.groups];[groups[index-1],groups[index]]=[groups[index],groups[index-1]];update({groups})}} disabled={!index}><ChevronUp size={15}/></button><button type="button" onClick={()=>{const groups=[...selected.groups];[groups[index],groups[index+1]]=[groups[index+1],groups[index]];update({groups})}} disabled={index===selected.groups.length-1}><ChevronDown size={15}/></button><button type="button" onClick={()=>update({groups:selected.groups.filter((item)=>item.categoryId!==group.categoryId)})}><Trash2 size={15}/></button></div><input className="field mt-2" placeholder="菜单别名（可空）" value={group.alias??""} onChange={(event)=>update({groups:selected.groups.map((item)=>item.categoryId===group.categoryId?{...item,alias:event.target.value||undefined}:item)})}/><select className="field mt-2" value={group.limit??"all"} onChange={(event)=>update({groups:selected.groups.map((item)=>item.categoryId===group.categoryId?{...item,limit:event.target.value==="all"?null:Number(event.target.value)}:item)})}><option value="all">全部</option>{[6,8,10,12,16,20,30,50].map((value)=><option value={value} key={value}>{value} 个</option>)}</select></article>)}</div>}
       {selected.type === "productSearch" && textField("提示文字", selected.placeholder, (value) => update({ placeholder: value }))}
       {selected.type === "categoryNav" && textField("标题", selected.title, (value) => update({ title: value }))}
       {selected.type === "productGrid" && <>{textField("标题", selected.title, (value) => update({ title: value }))}<label className="label">商品来源<select className="field" value={selected.source.mode} onChange={(event) => { const mode = event.target.value; if (mode === "all") update({ source: { mode } }); if (mode === "category") update({ source: { mode, categoryId: categories[0]?.id ?? "" } }); if (mode === "selected") update({ source: { mode, productIds: [] } }); }}><option value="all">全部商品</option><option value="category">指定分类</option><option value="selected">指定商品</option></select></label>{selected.source.mode === "category" && <label className="label">分类<select className="field" value={selected.source.categoryId} onChange={(event) => update({ source: { mode: "category", categoryId: event.target.value } })}>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>}{selected.source.mode === "selected" && <fieldset className="grid gap-2"><legend className="mb-2 text-sm font-semibold">选择商品</legend>{products.map((product) => <label className="flex items-center gap-2 text-sm" key={product.id}><input type="checkbox" checked={selectedProductIds.includes(product.id)} onChange={(event) => update({ source: { mode: "selected", productIds: event.target.checked ? [...selectedProductIds, product.id] : selectedProductIds.filter((id) => id !== product.id) } })}/>{product.name}</label>)}</fieldset>}</>}
@@ -235,12 +264,12 @@ export function PageEditor({ page, publicUrl, store, employee, products, categor
     </div>;
   }
 
-  return <><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><Link className="muted text-sm" href="/admin/pages">← 页面列表</Link><h1 className="page-title mt-2">装修：{page.title}</h1><p className="muted mt-1 text-sm">{page.published ? page.isHome ? "已发布 · 当前主页" : "已发布" : "草稿"}</p></div><div className="actions"><form action={savePageDraft}><input type="hidden" name="id" value={page.id}/><input type="hidden" name="config" value={config}/><button className="btn">保存草稿</button></form><form action={publishPage}><input type="hidden" name="id" value={page.id}/><input type="hidden" name="config" value={config}/><input type="hidden" name="makeHome" value="false"/><button className="btn btn-primary">发布当前版本</button></form>{!page.isHome && <form action={publishPage}><input type="hidden" name="id" value={page.id}/><input type="hidden" name="config" value={config}/><input type="hidden" name="makeHome" value="true"/><button className="btn">发布并设主页</button></form>}{page.published && <a className="btn" target="_blank" href={publicUrl}>查看线上页</a>}</div></div>
+  return <><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><Link className="muted text-sm" href="/admin/pages">← 页面列表</Link><h1 className="page-title mt-2">装修：{page.title}</h1><p className="muted mt-1 text-sm">{page.published ? page.isHome ? "已发布 · 当前主页" : "已发布" : "草稿"}</p></div><div className="actions"><form action={savePageDraft}><input type="hidden" name="id" value={page.id}/><input type="hidden" name="config" value={config}/><ActionSubmitButton className="btn disabled:cursor-wait disabled:opacity-60" pendingLabel="保存中…">保存草稿</ActionSubmitButton></form><form action={publishPage}><input type="hidden" name="id" value={page.id}/><input type="hidden" name="config" value={config}/><input type="hidden" name="makeHome" value="false"/><ActionSubmitButton className="btn btn-primary disabled:cursor-wait disabled:opacity-60" pendingLabel="发布中…">发布当前版本</ActionSubmitButton></form>{!page.isHome && <form action={publishPage}><input type="hidden" name="id" value={page.id}/><input type="hidden" name="config" value={config}/><input type="hidden" name="makeHome" value="true"/><ActionSubmitButton className="btn disabled:cursor-wait disabled:opacity-60" pendingLabel="发布中…">发布并设主页</ActionSubmitButton></form>}{page.published && <a className="btn" target="_blank" href={publicUrl}>查看线上页</a>}</div></div>
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={dragStart} onDragCancel={() => setActiveLabel("")} onDragEnd={dragEnd}>
       <div className="grid items-start gap-5 xl:grid-cols-[200px_410px_minmax(280px,1fr)] 2xl:grid-cols-[220px_430px_minmax(320px,1fr)]">
         <aside className="panel p-4 xl:sticky xl:top-5"><h2 className="font-bold">组件</h2><p className="muted mb-3 mt-1 text-xs">点击追加，或拖入中间画布</p><div className="grid gap-2">{types.map((type) => <PaletteItem key={type} type={type} onAdd={() => add(type)}/>)}</div></aside>
         <section><div className="mb-3 flex items-center justify-between"><div><h2 className="font-bold">页面画布</h2><p className="muted mt-1 text-xs">拖动组件调整页面顺序</p></div><span className="badge">{components.length} 个组件</span></div>
-          <PhoneCanvas empty={!components.length}><SortableContext items={components.map((item) => item.id)} strategy={verticalListSortingStrategy}><Storefront store={store} categories={categories} products={products} employee={employee} pageConfig={{ version: 3, themeColor, components }} pageSlug={page.slug} customerActive={false} favoriteIds={[]} preview editor={{ renderComponent: (component, content) => <SortableCanvasItem key={component.id} component={component} selected={selectedId === component.id} onSelect={() => setSelectedId(component.id)} onRemove={() => remove(component.id)}>{content}</SortableCanvasItem> }}/></SortableContext></PhoneCanvas>
+          <PhoneCanvas empty={!components.length}><SortableContext items={components.map((item) => item.id)} strategy={verticalListSortingStrategy}><PublicHome catalog={{store,categories,products,customerActive:false}} config={{ version: 4, themeColor, components }} employee={employee ?? {name:store.name,phone:store.phone,wechat:null,title:null,bio:store.address,avatarUrl:store.logoUrl}} favoriteIds={[]} pages={pages} renderComponent={(component, content) => <SortableCanvasItem key={component.id} component={component} selected={selectedId === component.id} onSelect={() => setSelectedId(component.id)} onRemove={() => remove(component.id)}>{content}</SortableCanvasItem>}/></SortableContext></PhoneCanvas>
         </section>
         <aside className="panel p-4 xl:sticky xl:top-5"><h2 className="mb-4 font-bold">属性</h2><Properties/></aside>
       </div>

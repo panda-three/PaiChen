@@ -3,7 +3,8 @@ import { Role } from "@prisma/client";
 import { lastValidAttribution } from "../lib/attribution";
 import { groupImportRows,ImportRow } from "../lib/product-import";
 import { isIntentCustomer,parsePageConfig,sanitizeRichText } from "../lib/validation";
-import { validatePageConfigForStore } from "../lib/page-config";
+import { resolveImageAdHref, validatePageConfigForStore } from "../lib/page-config";
+import { canUploadPageAsset, PAGE_ASSET_MAX_SIZE, PAGE_ASSET_MIME_TYPES } from "../lib/page-assets";
 import { insertPageComponent,movePageComponent,removePageComponent } from "../lib/page-editor-state";
 import { buildPageCopyData,publicPagePath } from "../lib/page-management";
 import { canOperateStore,orderScope } from "../lib/scopes";
@@ -14,12 +15,16 @@ import { defaultPublicStoreSlug,validatePreviewStoreSlug } from "../lib/server-e
 import { runtimeDatabaseUrl } from "../lib/db";
 
 describe("page config",()=>{
-  it("upgrades V1 and strips executable rich text",()=>{const config=parsePageConfig({version:1,components:[{id:"a",type:"richText",html:'<p onclick="bad()">安全</p><script>alert(1)</script>'},{id:"p",type:"products",title:"商品",productIds:["p1"]}]});expect(config.version).toBe(3);expect(config.components.map(x=>x.type)).toEqual(["storeHeader","employeeCard","richText","productGrid"]);expect(config.components.find(x=>x.type==="richText")).toMatchObject({html:"<p>安全</p>"});expect(config.components.find(x=>x.type==="productGrid")).toMatchObject({source:{mode:"selected",productIds:["p1"]}})});
-  it("upgrades V2 to V3 without changing component order",()=>{const config=parsePageConfig({version:2,components:[{id:"s",type:"productSearch",placeholder:"搜索"},{id:"p",type:"productGrid",title:"精选",source:{mode:"all"}}]});expect(config).toMatchObject({version:3,themeColor:"#5f4939"});expect(config.components.map(x=>x.id)).toEqual(["s","p"])});
+  it("upgrades V1 and strips executable rich text",()=>{const config=parsePageConfig({version:1,components:[{id:"a",type:"richText",html:'<p onclick="bad()">安全</p><script>alert(1)</script>'},{id:"p",type:"products",title:"商品",productIds:["p1"]}]});expect(config.version).toBe(4);expect(config.components.map(x=>x.type)).toEqual(["storeHeader","employeeCard","richText","productGrid"]);expect(config.components.find(x=>x.type==="richText")).toMatchObject({html:"<p>安全</p>"});expect(config.components.find(x=>x.type==="productGrid")).toMatchObject({source:{mode:"selected",productIds:["p1"]}})});
+  it("upgrades V2 and V3 to V4 and converts legacy image ads",()=>{const config=parsePageConfig({version:3,themeColor:"#123456",components:[{id:"ad",type:"image",url:"https://example.com/a.jpg",alt:"活动",link:"/sale"},{id:"p",type:"productGrid",title:"精选",source:{mode:"all"}}]});expect(config).toMatchObject({version:4,themeColor:"#123456"});expect(config.components[0]).toMatchObject({type:"imageAd",items:[{imageUrl:"https://example.com/a.jpg",target:{type:"custom",url:"/sale"}}]})});
   it("rejects unknown component types",()=>expect(()=>parsePageConfig({version:1,components:[{id:"x",type:"payment"}]})).toThrow());
   it("blocks javascript URLs",()=>expect(sanitizeRichText('<a href="javascript:alert(1)">x</a>')).not.toContain("javascript:"));
   it("rejects cross-store product and category references",()=>{const available={productIds:new Set(["own-product"]),categoryIds:new Set(["own-category"])};expect(()=>validatePageConfigForStore(parsePageConfig({version:2,components:[{id:"x",type:"productGrid",title:"x",source:{mode:"selected",productIds:["other-product"]}}]}),available)).toThrow("商品不属于当前店铺");expect(()=>validatePageConfigForStore(parsePageConfig({version:2,components:[{id:"x",type:"productGrid",title:"x",source:{mode:"category",categoryId:"other-category"}}]}),available)).toThrow("商品分类不属于当前店铺")});
+  it("keeps page-level store header overrides within the current store",()=>{const config=parsePageConfig({version:3,themeColor:"#5f4939",components:[{id:"header",type:"storeHeader",style:"compact",subtitle:"活动专享",name:"夏季展厅",imageSource:{type:"productMainImage",productId:"own-product"}}]});expect(config.components[0]).toMatchObject({name:"夏季展厅",imageSource:{type:"productMainImage",productId:"own-product"}});expect(()=>validatePageConfigForStore(config,{productIds:new Set(),categoryIds:new Set()})).toThrow("店铺头部图片不属于当前店铺")});
   it("requires a product grid on homepages",()=>{const config=parsePageConfig({version:2,components:[{id:"h",type:"storeHeader",style:"compact",subtitle:"x"},{id:"c",type:"employeeCard",style:"dark"}]});expect(()=>validatePageConfigForStore(config,{productIds:new Set(),categoryIds:new Set()},true)).toThrow("主页必须包含")});
+  it("enforces image and group limits and safe custom protocols",()=>{expect(()=>parsePageConfig({version:4,themeColor:"#123456",components:[{id:"a",type:"imageAd",items:Array.from({length:11},(_,index)=>({id:String(index),imageUrl:"https://example.com/a.jpg",alt:""}))}]})).toThrow();expect(()=>parsePageConfig({version:4,themeColor:"#123456",components:[{id:"a",type:"imageAd",items:[{id:"1",imageUrl:"https://example.com/a.jpg",alt:"",target:{type:"custom",url:"javascript:alert(1)"}}]}]})).toThrow();expect(()=>parsePageConfig({version:4,themeColor:"#123456",components:[{id:"g",type:"productGroupTabs",title:"x",groups:Array.from({length:16},(_,index)=>({categoryId:String(index),limit:null}))}]})).toThrow()});
+  it("rejects cross-store ad references and degrades stale targets",()=>{const config=parsePageConfig({version:4,themeColor:"#123456",components:[{id:"a",type:"imageAd",items:[{id:"1",imageUrl:"https://example.com/a.jpg",alt:"",target:{type:"product",productId:"other"}}]}]});expect(()=>validatePageConfigForStore(config,{productIds:new Set(["own"]),categoryIds:new Set(),pageIds:new Set()})).toThrow("广告商品不属于当前店铺");expect(resolveImageAdHref({type:"product",productId:"stale"},{storeSlug:"demo",refCode:"r",productIds:new Set(),categoryIds:new Set(),pages:new Map()})).toBeNull();expect(resolveImageAdHref({type:"page",pageId:"p1"},{storeSlug:"demo",refCode:"r",productIds:new Set(),categoryIds:new Set(),pages:new Map([["p1","sale"]])})).toBe("/s/demo/p/sale?ref=r")});
+  it("defaults product tabs to the first configured group",()=>{const config=parsePageConfig({version:4,themeColor:"#123456",components:[{id:"g",type:"productGroupTabs",title:"精选",groups:[{categoryId:"c2",alias:"餐厅",limit:6},{categoryId:"c1",limit:null}]}]});expect(config.components[0]).toMatchObject({groups:[{categoryId:"c2",alias:"餐厅",limit:6},{categoryId:"c1",limit:null}]})});
 });
 
 describe("public storefront state",()=>{
@@ -76,6 +81,10 @@ describe("permissions and attribution",()=>{
   it("lets employees see sourced or responsible orders",()=>expect(orderScope({id:"e1",role:Role.EMPLOYEE,storeId:"s1"})).toEqual({storeId:"s1",OR:[{sourceEmployeeId:"e1"},{responsibleEmployeeId:"e1"}]}));
   it("keeps platform support out of business data",()=>{expect(canOperateStore({id:"p",role:Role.PLATFORM_ADMIN,storeId:null},"s","catalog")).toBe(true);expect(canOperateStore({id:"p",role:Role.PLATFORM_ADMIN,storeId:null},"s","business")).toBe(false)});
   it("uses only the last valid authenticated employee source",()=>{expect(lastValidAttribution({employeeId:"e",employeeActive:true,sameStore:true,authenticatedAction:true})).toBe("e");expect(lastValidAttribution({employeeId:"e",employeeActive:false,sameStore:true,authenticatedAction:true})).toBeNull()});
+});
+
+describe("page asset uploads",()=>{
+  it("limits roles, stores, formats, and size",()=>{expect(canUploadPageAsset({role:Role.STORE_ADMIN,storeId:"s1"},"s1")).toBe(true);expect(canUploadPageAsset({role:Role.STORE_ADMIN,storeId:"s1"},"s2")).toBe(false);expect(canUploadPageAsset({role:Role.PLATFORM_ADMIN,storeId:null},"s2","s2")).toBe(true);expect(PAGE_ASSET_MIME_TYPES).toEqual(["image/jpeg","image/png","image/webp"]);expect(PAGE_ASSET_MAX_SIZE).toBe(5*1024*1024)});
 });
 
 describe("V2 multi-variant import",()=>{

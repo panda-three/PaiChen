@@ -30,6 +30,13 @@ describe("publicOrderSchema", () => {
   it("limits duplicate-submit keys to UUIDs", () => {
     expect(publicOrderSchema.safeParse({ ...validOrder, clientRequestId: "same-order" }).success).toBe(false);
   });
+
+  it("parses non-negative order fees from form values", () => {
+    const result = publicOrderSchema.safeParse({ ...validOrder, shippingFee: "35.50", installationFee: "100" });
+    expect(result.success).toBe(true);
+    if (result.success) expect([result.data.shippingFee, result.data.installationFee]).toEqual([35.5, 100]);
+    expect(publicOrderSchema.safeParse({ ...validOrder, shippingFee: "-1" }).success).toBe(false);
+  });
 });
 
 describe("isHttpUrl", () => {

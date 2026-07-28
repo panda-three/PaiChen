@@ -62,12 +62,14 @@ https://PROJECT_REF.supabase.co
 
 ## 4. Storage 桶的用途
 
-项目使用两个桶：
+项目使用四个桶：
 
 | 桶名称 | 可见性 | 用途 | 生命周期 |
 | --- | --- | --- | --- |
 | `product-imports` | 私有 | 临时保存上传的 `.xlsx` | 导入结束后立即删除 |
 | `product-images` | 公开 | 长期保存商品主图、规格图和详情图 | 随商品业务长期保留 |
+| `page-assets` | 公开 | 页面装修图片广告，按店铺和页面隔离 | 删除或替换仅移除配置引用，本期不物理删除对象 |
+| `customer-assets` | 公开只读 | 保存客户头像和客服二维码 | 替换或移除资料时清理旧文件 |
 
 `product-imports` 建议额外配置一天后自动清理的生命周期规则，作为浏览器上传成功但未继续调用导入接口时的兜底措施。
 
@@ -116,6 +118,7 @@ prisma/migrations/20260726000200_product_image_import/migration.sql
 
 - `product-imports`
 - `product-images`
+- `customer-assets`
 
 脚本使用 `on conflict` 更新配置，可以重复执行，不会删除桶内已有文件。
 
@@ -186,11 +189,13 @@ SUPABASE_SERVICE_ROLE_KEY=替换为真实的service-role密钥
 - 图片：PNG、JPEG、WebP；
 - 单张图片最大 5 MB。
 
+客户资料图片同样仅支持 PNG、JPEG、WebP，单张最大 5 MB。浏览器不持有 Storage 密钥，上传、替换和删除都由已登录客户通过服务端接口完成，并校验图片路径所属店铺和客户档案；桶公开能力仅用于读取图片。
+
 ## 8. 常见问题
 
 ### 已经执行 `npm run db:deploy`，为什么仍然无法上传？
 
-数据库迁移只处理 PostgreSQL。还需要创建两个 Storage 桶，并配置 `SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY`。
+数据库迁移只处理 PostgreSQL。还需要创建 Storage 桶，并配置 `SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY`。
 
 ### 为什么不把图片直接存进 PostgreSQL？
 
@@ -210,14 +215,17 @@ service role 可以绕过大部分权限限制。一旦进入浏览器，任何�
 
 ## 9. 上线检查清单
 
+上线顺序：先执行 `supabase/product-storage.sql` 创建或更新 Storage 桶，再执行 Prisma 增量迁移，最后部署应用。这样新版本开始接收页面图片时，目标桶和名片字段已经存在。
+
 - [ ] 已备份生产数据库
 - [ ] `DATABASE_URL`、`DIRECT_URL` 指向正确项目
 - [ ] 已执行 `npm run db:deploy`
 - [ ] 已运行 `supabase/product-storage.sql`
-- [ ] Storage 中存在两个目标桶
+- [ ] Storage 中存在 `product-imports`、`product-images`、`customer-assets`、`page-assets` 四个目标桶
 - [ ] Vercel 已配置 `SUPABASE_URL`
 - [ ] Vercel 已配置 `SUPABASE_SERVICE_ROLE_KEY`
 - [ ] service role 密钥没有 `NEXT_PUBLIC_` 前缀
 - [ ] 已重新部署 Vercel
 - [ ] 已使用真实业务 Excel 完成一次导入验收
 - [ ] 已确认商品默认未分类、未上架
+- [ ] 已用 JPG/PNG/WebP 验证页面图片广告上传，且单图不超过 5 MB

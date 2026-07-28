@@ -184,11 +184,12 @@ export async function deletePage(data: FormData) {
 
 async function checkedPageConfig(raw: unknown, storeId: string, home: boolean) {
   const config = parsePageConfig(raw);
-  const [products, categories] = await Promise.all([
+  const [products, categories, pages] = await Promise.all([
     db.product.findMany({ where: { storeId }, select: { id: true } }),
     db.category.findMany({ where: { storeId }, select: { id: true } }),
+    db.storePage.findMany({ where: { storeId, publishedAt: { not: null }, publishedJson: { not: null } }, select: { id: true } }),
   ]);
-  return validatePageConfigForStore(config, { productIds: new Set(products.map((item) => item.id)), categoryIds: new Set(categories.map((item) => item.id)) }, home);
+  return validatePageConfigForStore(config, { productIds: new Set(products.map((item) => item.id)), categoryIds: new Set(categories.map((item) => item.id)), pageIds: new Set(pages.map((item) => item.id)) }, home);
 }
 
 export async function savePageDraft(data: FormData) {
@@ -202,13 +203,14 @@ export async function savePageDraft(data: FormData) {
   await db.storePage.update({ where: { id }, data: { draftJson: JSON.stringify(config) } });
   await audit(actor.id, "保存页面草稿", "StorePage", id, storeId);
   revalidatePath(path);
+  redirect(`${path}?notice=${encodeURIComponent("草稿已保存")}`);
 }
 
 export async function publishPage(data: FormData) {
   const actor = await requireActor([Role.STORE_ADMIN, Role.PLATFORM_ADMIN]);
   const id = value(data, "id"); const makeHome = value(data, "makeHome") === "true";
   const storeId = actor.role === Role.STORE_ADMIN ? actor.storeId : (await cookies()).get("supportStoreId")?.value;
-  const page = await db.storePage.findFirst({ where: { id, storeId: storeId ?? "" } });
+  const page = await db.storePage.findFirst({ where: { id, storeId: storeId ?? "" }, include: { store: { select: { slug: true } } } });
   if (!page) fail("/admin/pages", "页面不存在");
   const activePage = page!; const submitted = value(data, "config") || activePage.draftJson;
   let clean: PageConfigV2;
@@ -220,6 +222,9 @@ export async function publishPage(data: FormData) {
   await audit(actor.id, "发布页面", "StorePage", id, storeId, { isHome: makeHome || activePage.isHome });
   revalidatePath("/admin/pages");
   revalidatePath(`/admin/pages/${id}`);
+  revalidatePath(`/s/${activePage.store.slug}`);
+  revalidatePath(publicPagePath(activePage.store.slug, activePage.slug, false));
+  redirect(`/admin/pages/${id}?notice=${encodeURIComponent(makeHome ? "当前版本已发布并设为主页" : "当前版本已发布")}`);
 }
 
 export async function setHomePage(data: FormData) {

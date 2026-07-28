@@ -5,6 +5,7 @@ declare module "next-auth" {
     role: "PLATFORM_ADMIN" | "ENTERPRISE_ADMIN" | "STORE_ADMIN" | "EMPLOYEE" | "CUSTOMER";
     storeId: string | null;
     enterpriseId: string | null;
+    customerSessionId?: string | null;
   }
 
   interface Session {
@@ -14,6 +15,7 @@ declare module "next-auth" {
       role: "PLATFORM_ADMIN" | "ENTERPRISE_ADMIN" | "STORE_ADMIN" | "EMPLOYEE" | "CUSTOMER";
       storeId: string | null;
       enterpriseId: string | null;
+      customerSessionId?: string | null;
     };
   }
 }
@@ -24,5 +26,6 @@ declare module "@auth/core/jwt" {
     role?: "PLATFORM_ADMIN" | "ENTERPRISE_ADMIN" | "STORE_ADMIN" | "EMPLOYEE" | "CUSTOMER";
     storeId?: string | null;
     enterpriseId?: string | null;
+    customerSessionId?: string | null;
   }
 }

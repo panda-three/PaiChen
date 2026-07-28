@@ -16,7 +16,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const returnTo = safeReturnTo(query.returnTo, query.store);
   const session = await auth();
   if (session?.user?.role === Role.CUSTOMER) redirect(returnTo);
-  return <AuthShell eyebrow="CLIENT ACCESS" title="客户账号" description="登录后继续浏览收藏与订单；新账号需由来源员工或店铺管理员线下核验并激活。">
+  return <AuthShell eyebrow="CLIENT ACCESS" title="客户账号" description="注册后即可登录并继续浏览店铺与意向单；忘记密码仍由店铺人工核验。">
     <AuthEndpointProvider basePath={CUSTOMER_AUTH_BASE_PATH}>
       <CustomerAccess storeSlug={query.store ?? ""} refCode={query.ref ?? ""} initialMode={query.mode ?? "login"} returnTo={returnTo}/>
     </AuthEndpointProvider>

@@ -131,6 +131,7 @@ model User {
   favorites           Favorite[]
   customerOrders      Order[]               @relation("CustomerOrders")
   orderChanges        OrderChange[]
+  customerSessions    CustomerSession[]
 
   @@index([storeId, role])
   @@index([enterpriseId, role])
@@ -332,6 +333,12 @@ model CustomerProfile {
   customer         User           @relation("CustomerAccount", fields: [customerId], references: [id], onDelete: Cascade)
   name             String
   phone            String
+  avatarUrl        String?
+  servicePhone     String?
+  serviceWechat    String?
+  serviceQrUrl     String?
+  cardTitle        String?
+  cardBio          String?
   status           CustomerStatus @default(PENDING)
   sourceEmployeeId String?
   sourceEmployee   User?          @relation("ProfileSource", fields: [sourceEmployeeId], references: [id], onDelete: SetNull)
@@ -344,6 +351,19 @@ model CustomerProfile {
   @@unique([storeId, customerId])
   @@unique([storeId, phone])
   @@index([storeId, status])
+}
+
+model CustomerSession {
+  id           String    @id @default(cuid())
+  customerId   String
+  customer     User      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  userAgent    String
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+
+  @@index([customerId, expiresAt])
 }
 
 model CustomerAttribution {

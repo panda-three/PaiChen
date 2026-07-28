@@ -9,6 +9,11 @@ export const publicOrderSchema = z.object({
   customerPhone: z.string().trim().regex(/^1\d{10}$/, "请输入正确的手机号").optional().default(""),
   customerAddress: z.string().trim().max(200).default(""),
   customerRemark: z.string().trim().max(500).default(""),
+  logisticsName: z.string().trim().max(100).default(""),
+  logisticsAddress: z.string().trim().max(200).default(""),
+  logisticsPhone: z.string().trim().max(30).default(""),
+  shippingFee: z.coerce.number().min(0).max(99999999).default(0),
+  installationFee: z.coerce.number().min(0).max(99999999).default(0),
   items: z.array(z.object({ productId: z.string().min(1), variantId: z.string().min(1).optional().nullable(), quantity: z.number().int().min(1).max(999), remark: z.string().trim().max(200).default("") })).min(1, "至少选择一件商品"),
 });
 
@@ -18,6 +23,22 @@ export const customerRegistrationSchema = z.object({
   name: z.string().trim().min(1).max(50),
   phone: z.string().trim().regex(/^1\d{10}$/, "请输入正确的手机号"),
   password: z.string().min(8, "密码至少 8 个字符").max(72),
+});
+
+export const customerProfileSettingsSchema = z.object({
+  storeSlug: z.string().min(1),
+  name: z.string().trim().min(1, "昵称不能为空").max(50),
+  phone: z.string().trim().regex(/^1\d{10}$/, "请输入正确的本店联系电话"),
+  servicePhone: z.string().trim().max(30).nullable().optional(),
+  serviceWechat: z.string().trim().max(60).nullable().optional(),
+  cardTitle: z.string().trim().max(50).nullable().optional(),
+  cardBio: z.string().trim().max(200).nullable().optional(),
+  currentPassword: z.string().min(1).max(72).optional(),
+});
+
+export const customerPasswordSettingsSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8, "新密码至少 8 个字符").max(72),
 });
 
 export const behaviorEventSchema = z.object({

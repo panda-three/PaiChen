@@ -5,6 +5,7 @@ import { getPublicCatalog } from "@/lib/public-catalog";
 import { parsePageConfig } from "@/lib/page-config";
 import { PublicHome } from "./public-home";
 import { canAccessPublicStore } from "@/lib/deployment-scope";
+import { resolveHomeCard } from "@/lib/home-card";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params; const store = await db.store.findFirst({ where: { slug, isActive: true }, select: { name: true, address: true, logoUrl: true } });
@@ -14,12 +15,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function StorefrontPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ ref?: string }> }) {
   const [{ slug }, { ref }] = await Promise.all([params, searchParams]); const catalog = await getPublicCatalog(slug);
-  const [page, employee, favorites] = await Promise.all([
+  const [page, profile, favorites, pages] = await Promise.all([
     db.storePage.findFirst({ where: { storeId: catalog.store.id, isHome: true, publishedAt: { not: null }, publishedJson: { not: null } } }),
-    ref ? db.user.findFirst({ where: { storeId: catalog.store.id, shareCode: ref, role: "EMPLOYEE", isActive: true }, select: { name: true, phone: true, wechat: true, title: true, bio: true, avatarUrl: true } }) : null,
+    catalog.customerId ? db.customerProfile.findFirst({ where: { storeId: catalog.store.id, customerId: catalog.customerId, status: "ACTIVE" }, select: { name: true, phone: true, avatarUrl: true, servicePhone: true, serviceWechat: true, serviceQrUrl: true, cardTitle: true, cardBio: true } }) : null,
     catalog.customerId ? db.favorite.findMany({ where: { storeId: catalog.store.id, customerId: catalog.customerId }, select: { productId: true } }) : [],
+    db.storePage.findMany({ where: { storeId: catalog.store.id, publishedAt: { not: null }, publishedJson: { not: null } }, select: { id: true, slug: true } }),
   ]);
   if (!page?.publishedJson) notFound();
   let defaultCard = { name: catalog.store.name, phone: catalog.store.phone, wechat: null as string | null, title: "店铺顾问", bio: catalog.store.address, avatarUrl: catalog.store.logoUrl }; try { defaultCard = { ...defaultCard, ...JSON.parse(catalog.store.defaultCardJson) }; } catch {}
-  return <PublicHome catalog={catalog} config={parsePageConfig(page.publishedJson)} employee={employee ?? defaultCard} refCode={ref} favoriteIds={favorites.map((item) => item.productId)}/>;
+  const card = resolveHomeCard(defaultCard, profile);
+  return <PublicHome catalog={catalog} config={parsePageConfig(page.publishedJson)} employee={card} refCode={ref} favoriteIds={favorites.map((item) => item.productId)} pages={pages}/>;
 }

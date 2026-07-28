@@ -14,7 +14,12 @@ export async function getPublicStore(slug: string) {
   const customerId = session?.user?.role === Role.CUSTOMER ? session.user.id : null;
   const profile = customerId ? await db.customerProfile.findFirst({ where: { storeId: store.id, customerId, status: CustomerStatus.ACTIVE } }) : null;
   if (scope.isPreview && customerId && !profile) notFound();
-  return { store, customerId, customerActive: Boolean(profile) };
+  return {
+    store,
+    customerId,
+    customerActive: Boolean(profile),
+    customerProfile: profile ? { name: profile.name, phone: profile.phone } : null,
+  };
 }
 
 export async function getPublicCatalog(slug: string) {
