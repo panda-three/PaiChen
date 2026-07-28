@@ -63,7 +63,7 @@ export async function redeemStaffInvitation(raw: unknown) {
   return db.$transaction(async (tx) => {
     const invitation = await tx.staffInvitation.findUnique({ where: { tokenHash: tokenHash(value.invite) }, include: { store: true } });
     if (!invitation) throw new Error("邀请不存在");
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`${invitation.storeId}:${invitation.role}`}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${invitation.storeId}:${invitation.role}`}))`;
     const locked = await tx.staffInvitation.findUnique({ where: { id: invitation.id }, include: { store: true } });
     if (!locked) throw new Error("邀请不存在");
     const unavailable = invitationUnavailable(locked);
