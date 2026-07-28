@@ -15,6 +15,7 @@ import { defaultPublicStoreSlug,validatePreviewStoreSlug } from "../lib/server-e
 import { runtimeDatabaseUrl } from "../lib/db";
 import { LIANGCHEN_CONTENT_PAGES, liangchenHomeConfig, missingLiangchenContentPages } from "../lib/liangchen-template";
 import { productNameWithCode, resolveProductGroup } from "../lib/product-group";
+import { scrollCarouselTo } from "../lib/carousel";
 
 describe("page config",()=>{
   it("upgrades V1 and strips executable rich text",()=>{const config=parsePageConfig({version:1,components:[{id:"a",type:"richText",html:'<p onclick="bad()">安全</p><script>alert(1)</script>'},{id:"p",type:"products",title:"商品",productIds:["p1"]}]});expect(config.version).toBe(4);expect(config.components.map(x=>x.type)).toEqual(["storeHeader","employeeCard","richText","productGrid"]);expect(config.components.find(x=>x.type==="richText")).toMatchObject({html:"<p>安全</p>"});expect(config.components.find(x=>x.type==="productGrid")).toMatchObject({source:{mode:"selected",productIds:["p1"]}})});
@@ -40,6 +41,14 @@ describe("liangchen template and product groups",()=>{
 });
 
 describe("public storefront state",()=>{
+  it("moves carousel controls in webviews without element.scrollTo",()=>{
+    const legacyTrack={clientWidth:390,scrollLeft:0};
+    expect(()=>scrollCarouselTo(legacyTrack,2)).not.toThrow();
+    expect(legacyTrack.scrollLeft).toBe(780);
+    const calls:ScrollToOptions[]=[];
+    scrollCarouselTo({clientWidth:390,scrollLeft:0,scrollTo:(options)=>calls.push(options)},1);
+    expect(calls).toEqual([{left:390,behavior:"smooth"}]);
+  });
   it("keeps ref on store links and uses the customer login return",()=>{expect(storeHref("demo","product/p1","staff code")).toBe("/s/demo/product/p1?ref=staff%20code");expect(customerHref("demo","e1","/s/demo/cart?ref=e1")).toBe("/login?store=demo&returnTo=%2Fs%2Fdemo%2Fcart%3Fref%3De1&ref=e1")});
   it("normalizes, adds and removes persisted cart lines",()=>{const empty=normalizeCart({version:1,lines:[{productId:"p1",variantId:null,quantity:1,remark:""},{productId:"bad",variantId:null,quantity:0,remark:""}]});expect(empty.lines).toHaveLength(1);const added=updateCart(empty,{productId:"p1",variantId:null},2);expect(added.lines[0].quantity).toBe(3);expect(updateCart(added,{productId:"p1",variantId:null},-3).lines).toEqual([])});
   it("limits preview reads to the configured store",()=>{const preview={isPreview:true,previewStoreSlug:"demo"};expect(canAccessPublicStore("demo",preview)).toBe(true);expect(canAccessPublicStore("other",preview)).toBe(false);expect(canAccessPublicStore("other",{isPreview:false,previewStoreSlug:null})).toBe(true)});

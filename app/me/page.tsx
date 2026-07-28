@@ -6,6 +6,9 @@ import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { canAccessPublicStore } from "@/lib/deployment-scope";
 import { customerHref } from "@/lib/public-links";
+import { getActiveAppUser } from "@/lib/app-authz";
+import { StaffCenter } from "@/app/me/staff-center";
+import { Role } from "@prisma/client";
 
 export default async function CustomerCenter({ searchParams }: { searchParams: Promise<{ store?: string; ref?: string }> }) {
   const query = await searchParams;
@@ -13,7 +16,9 @@ export default async function CustomerCenter({ searchParams }: { searchParams: P
   if (query.store) meParams.set("store", query.store);
   if (query.ref) meParams.set("ref", query.ref);
   const returnTo = `/me${meParams.size ? `?${meParams}` : ""}`;
-  const actor = await getActiveCustomer();
+  const appUser = await getActiveAppUser();
+  if (appUser && (appUser.role === Role.EMPLOYEE || appUser.role === Role.STORE_ADMIN) && appUser.store) return <StaffCenter user={{ ...appUser, store: appUser.store }}/>;
+  const actor = appUser?.role === Role.CUSTOMER ? await getActiveCustomer() : null;
   if (!actor) {
     if (query.store) redirect(customerHref(query.store, query.ref, returnTo));
     redirect(`/login?${new URLSearchParams({ returnTo })}`);

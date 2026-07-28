@@ -5,18 +5,20 @@ import { requireActor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { FormError, PageHeader } from "@/components/page-header";
 import { CopyLink } from "@/components/copy-link";
-import { saveEmployee, toggleEmployee } from "../actions";
+import { issueStaffInvitation, revokeStaffInvitation, saveEmployee, toggleEmployee } from "../actions";
 
-export default async function EmployeesPage({ searchParams }: { searchParams: Promise<{ edit?: string; error?: string }> }) {
+export default async function EmployeesPage({ searchParams }: { searchParams: Promise<{ edit?: string; error?: string; inviteLink?: string }> }) {
   const actor = await requireActor([Role.STORE_ADMIN]);
   const query = await searchParams;
-  const [employees, editing] = await Promise.all([
+  const [employees, editing, invitations] = await Promise.all([
     db.user.findMany({ where: { storeId: actor.storeId, role: Role.EMPLOYEE }, orderBy: { createdAt: "desc" } }),
     query.edit ? db.user.findFirst({ where: { id: query.edit, storeId: actor.storeId, role: Role.EMPLOYEE } }) : null,
+    db.staffInvitation.findMany({ where: { storeId: actor.storeId!, role: Role.EMPLOYEE, usedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } }),
   ]);
   return <>
     <PageHeader title="员工管理" description="维护员工后台账号、个人名片与专属分享入口" />
     <FormError message={query.error} />
+    <section className="panel mb-6 p-5"><h2 className="mb-2 font-bold">邀请员工注册 APP</h2><p className="muted mb-4 text-sm">邀请链接 72 小时内有效且仅可使用一次，角色和店铺由系统绑定。</p><form action={issueStaffInvitation} className="actions"><input className="field max-w-72" name="inviteePhone" inputMode="numeric" pattern="1[0-9]{10}" placeholder="受邀手机号" required/><button className="btn btn-primary">生成邀请链接</button></form>{query.inviteLink&&<div className="mt-4 rounded border bg-[#f6f8f6] p-3"><p className="mb-2 text-sm">完整链接仅本次展示，请立即复制：</p><CopyLink path={query.inviteLink}/></div>}{invitations.length>0&&<div className="mt-4 space-y-2">{invitations.map((item)=><div className="actions text-sm" key={item.id}><span>{item.inviteePhone.replace(/^(\d{3})\d{4}(\d{4})$/,"$1****$2")} · {item.expiresAt.toLocaleString("zh-CN")} 到期</span><form action={revokeStaffInvitation}><input type="hidden" name="id" value={item.id}/><button className="btn min-h-8 px-2 text-xs">撤销</button></form></div>)}</div>}</section>
     <details className="panel mb-6" open={Boolean(editing) || employees.length === 0}>
       <summary className="cursor-pointer px-5 py-4 font-bold">{editing ? "编辑员工" : "创建员工"}</summary>
       <form action={saveEmployee} className="border-t border-[#e5e9e6] p-5">

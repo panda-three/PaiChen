@@ -39,6 +39,14 @@ export const customerPasswordSettingsSchema = z.object({
   newPassword: z.string().min(8, "新密码至少 8 个字符").max(72),
 });
 
+export const staffProfileSettingsSchema = z.object({
+  name: z.string().trim().min(1, "姓名不能为空").max(50),
+  phone: z.string().trim().regex(/^1\d{10}$/, "请输入正确的联系电话"),
+  wechat: cardWechatSchema,
+  title: z.string().trim().max(30, "职位不能超过 30 个字符"),
+  bio: z.string().trim().max(90, "简介不能超过 90 个字符"),
+}).strict();
+
 export const behaviorEventSchema = z.object({
   storeSlug: z.string().min(1), sessionId: z.string().uuid(), eventId: z.string().uuid(),
   type: z.enum(["PAGE_VIEW", "PRODUCT_VIEW", "FAVORITE", "CART_ADD", "ORDER_SUBMIT"]),

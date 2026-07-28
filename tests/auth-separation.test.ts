@@ -6,7 +6,10 @@ describe("customer and admin authentication separation", () => {
   it("allows each account role only through its own login", () => {
     expect(isAccountAllowed("customer", Role.CUSTOMER, CustomerStatus.ACTIVE)).toBe(true);
     expect(isAccountAllowed("customer", Role.CUSTOMER, CustomerStatus.PENDING)).toBe(false);
-    expect(isAccountAllowed("customer", Role.STORE_ADMIN, null)).toBe(false);
+    expect(isAccountAllowed("customer", Role.STORE_ADMIN, null)).toBe(true);
+    expect(isAccountAllowed("customer", Role.EMPLOYEE, null)).toBe(true);
+    expect(isAccountAllowed("customer", Role.PLATFORM_ADMIN, null)).toBe(false);
+    expect(isAccountAllowed("customer", Role.ENTERPRISE_ADMIN, null)).toBe(false);
     expect(isAccountAllowed("admin", Role.CUSTOMER, CustomerStatus.ACTIVE)).toBe(false);
     expect(isAccountAllowed("admin", Role.PLATFORM_ADMIN, null)).toBe(true);
     expect(isAccountAllowed("admin", Role.ENTERPRISE_ADMIN, null)).toBe(true);

@@ -6,7 +6,7 @@ export const CUSTOMER_AUTH_BASE_PATH = "/api/auth";
 export const ADMIN_AUTH_BASE_PATH = "/api/admin-auth";
 
 export function isAccountAllowed(scope: AuthScope, role: Role, customerStatus: CustomerStatus | null) {
-  if (scope === "customer") return role === Role.CUSTOMER && customerStatus === CustomerStatus.ACTIVE;
+  if (scope === "customer") return role === Role.CUSTOMER ? customerStatus === CustomerStatus.ACTIVE : role === Role.EMPLOYEE || role === Role.STORE_ADMIN;
   return role !== Role.CUSTOMER;
 }
 

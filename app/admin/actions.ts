@@ -11,6 +11,8 @@ import { db } from "@/lib/db";
 import { orderScope } from "@/lib/scopes";
 import { homeTemplateConfig } from "@/lib/page-config";
 import { cardWechatSchema } from "@/lib/validation";
+import { createStaffInvitation, invitationCreateSchema } from "@/lib/staff-invitations";
+import { writeAudit } from "@/lib/audit";
 
 const optionalUrl = z.union([z.literal(""), z.string().url("图片必须是有效的 HTTP/HTTPS URL")]);
 const phone = z.string().trim().regex(/^1\d{10}$|^[0-9+() -]{6,20}$/, "联系电话格式不正确");
@@ -152,6 +154,32 @@ export async function toggleEmployee(data: FormData) {
   const updated = await db.user.update({ where: { id: employee.id }, data: { isActive: !employee.isActive } });
   if (!updated.isActive) await audit({ actorId: actor.id, storeId: actor.storeId, action: "停用员工", entityType: "User", entityId: employee.id, before: { isActive: true }, after: { isActive: false } });
   revalidatePath("/admin/employees");
+}
+
+export async function issueStaffInvitation(data: FormData) {
+  const actor = await requireActor([Role.STORE_ADMIN, Role.PLATFORM_ADMIN]);
+  const returnPath = actor.role === Role.STORE_ADMIN ? "/admin/employees" : "/admin/stores";
+  const parsed = invitationCreateSchema.safeParse({ storeId: actor.role === Role.STORE_ADMIN ? actor.storeId : text(data, "storeId"), inviteePhone: text(data, "inviteePhone") });
+  if (!parsed.success) fail(returnPath, fieldError(parsed.error));
+  let result;
+  try {
+    result = await createStaffInvitation({ actor, ...parsed.data });
+  } catch (error) {
+    fail(returnPath, error instanceof Error ? error.message : "邀请创建失败");
+  }
+  await writeAudit({ actorId: actor.id, storeId: parsed.data.storeId, action: "创建员工邀请", entityType: "StaffInvitation", entityId: result.invitation.id, after: { role: result.invitation.role, inviteePhone: result.invitation.inviteePhone, expiresAt: result.invitation.expiresAt } });
+  const link = `/login?mode=staff-register&invite=${encodeURIComponent(result.token)}`;
+  redirect(`${returnPath}?inviteLink=${encodeURIComponent(link)}`);
+}
+
+export async function revokeStaffInvitation(data: FormData) {
+  const actor = await requireActor([Role.STORE_ADMIN, Role.PLATFORM_ADMIN]);
+  const returnPath = actor.role === Role.STORE_ADMIN ? "/admin/employees" : "/admin/stores";
+  const invitation = await db.staffInvitation.findFirst({ where: { id: text(data, "id"), usedAt: null, revokedAt: null, ...(actor.role === Role.STORE_ADMIN ? { storeId: actor.storeId!, role: Role.EMPLOYEE } : { role: Role.STORE_ADMIN }) } });
+  if (!invitation) fail(returnPath, "邀请不存在或已失效");
+  const updated = await db.staffInvitation.update({ where: { id: invitation.id }, data: { revokedAt: new Date() } });
+  await writeAudit({ actorId: actor.id, storeId: invitation.storeId, action: "撤销员工邀请", entityType: "StaffInvitation", entityId: invitation.id, before: { revokedAt: null }, after: { revokedAt: updated.revokedAt } });
+  revalidatePath(returnPath);
 }
 
 export async function saveCategory(data: FormData) {
