@@ -24,5 +24,5 @@ export default async function StorefrontPage({ params, searchParams }: { params:
   if (!page?.publishedJson) notFound();
   let defaultCard = { name: catalog.store.name, phone: catalog.store.phone, wechat: null as string | null, title: "店铺顾问", bio: catalog.store.address, avatarUrl: catalog.store.logoUrl }; try { defaultCard = { ...defaultCard, ...JSON.parse(catalog.store.defaultCardJson) }; } catch {}
   const card = resolveHomeCard(defaultCard, profile);
-  return <PublicHome catalog={catalog} config={parsePageConfig(page.publishedJson)} employee={card} refCode={ref} favoriteIds={favorites.map((item) => item.productId)} pages={pages}/>;
+  return <PublicHome catalog={catalog} config={parsePageConfig(page.publishedJson)} employee={card} currentPageId={page.id} refCode={ref} favoriteIds={favorites.map((item) => item.productId)} pages={pages}/>;
 }

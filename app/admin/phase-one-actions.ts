@@ -11,6 +11,7 @@ import { requireActor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { parsePageConfig, blankPageConfig, homeTemplateConfig, validatePageConfigForStore, type PageConfigV2 } from "@/lib/page-config";
 import { buildPageCopyData, publicPagePath } from "@/lib/page-management";
+import { LIANGCHEN_CONTENT_PAGES, liangchenContentPageConfig, liangchenHomeConfig, missingLiangchenContentPages } from "@/lib/liangchen-template";
 
 const value = (data: FormData, key: string) => String(data.get(key) ?? "").trim();
 const fail = (path: string, message: string): never => redirect(`${path}?error=${encodeURIComponent(message)}`);
@@ -182,13 +183,22 @@ export async function deletePage(data: FormData) {
   revalidatePath(publicPagePath(page!.store.slug, page!.slug, false));
 }
 
-async function checkedPageConfig(raw: unknown, storeId: string, home: boolean) {
+async function checkedPageConfig(raw: unknown, storeId: string, home: boolean, publishing = false) {
   const config = parsePageConfig(raw);
   const [products, categories, pages] = await Promise.all([
     db.product.findMany({ where: { storeId }, select: { id: true } }),
     db.category.findMany({ where: { storeId }, select: { id: true } }),
-    db.storePage.findMany({ where: { storeId, publishedAt: { not: null }, publishedJson: { not: null } }, select: { id: true } }),
+    db.storePage.findMany({ where: { storeId, ...(publishing ? { publishedAt: { not: null }, publishedJson: { not: null } } : {}) }, select: { id: true, title: true } }),
   ]);
+  if (publishing) {
+    const availablePageIds = new Set(pages.map((item) => item.id));
+    const referenced = config.components.flatMap((component) => component.type === "quickNav" ? component.items.map((item) => item.pageId).filter((pageId): pageId is string => Boolean(pageId)) : component.type === "imageAd" ? component.items.flatMap((item) => item.target?.type === "page" ? [item.target.pageId] : []) : []);
+    const missingIds = [...new Set(referenced.filter((pageId) => !availablePageIds.has(pageId)))];
+    if (missingIds.length) {
+      const missing = await db.storePage.findMany({ where: { storeId, id: { in: missingIds } }, select: { title: true } });
+      throw new Error(`请先发布快捷入口页面：${missing.map((item) => item.title).join("、") || "目标页面"}`);
+    }
+  }
   return validatePageConfigForStore(config, { productIds: new Set(products.map((item) => item.id)), categoryIds: new Set(categories.map((item) => item.id)), pageIds: new Set(pages.map((item) => item.id)) }, home);
 }
 
@@ -214,7 +224,7 @@ export async function publishPage(data: FormData) {
   if (!page) fail("/admin/pages", "页面不存在");
   const activePage = page!; const submitted = value(data, "config") || activePage.draftJson;
   let clean: PageConfigV2;
-  try { clean = await checkedPageConfig(submitted, activePage.storeId, makeHome || activePage.isHome); } catch (error) { fail(`/admin/pages/${id}`, error instanceof Error ? error.message : "页面组件配置格式不正确"); }
+  try { clean = await checkedPageConfig(submitted, activePage.storeId, makeHome || activePage.isHome, true); } catch (error) { fail(`/admin/pages/${id}`, error instanceof Error ? error.message : "页面组件配置格式不正确"); }
   await db.$transaction(async (tx) => {
     if (makeHome) await tx.storePage.updateMany({ where: { storeId: activePage.storeId }, data: { isHome: false } });
     await tx.storePage.update({ where: { id }, data: { draftJson: JSON.stringify(clean), publishedJson: JSON.stringify(clean), publishedAt: new Date(), isHome: makeHome || activePage.isHome } });
@@ -225,6 +235,34 @@ export async function publishPage(data: FormData) {
   revalidatePath(`/s/${activePage.store.slug}`);
   revalidatePath(publicPagePath(activePage.store.slug, activePage.slug, false));
   redirect(`/admin/pages/${id}?notice=${encodeURIComponent(makeHome ? "当前版本已发布并设为主页" : "当前版本已发布")}`);
+}
+
+export async function applyLiangchenHomeTemplate(data: FormData) {
+  const actor = await requireActor([Role.STORE_ADMIN, Role.PLATFORM_ADMIN]);
+  const id = value(data, "id");
+  const storeId = actor.role === Role.STORE_ADMIN ? actor.storeId : (await cookies()).get("supportStoreId")?.value;
+  const page = await db.storePage.findFirst({ where: { id, storeId: storeId ?? "" }, include: { store: { select: { slug: true } } } });
+  if (!page) fail("/admin/pages", "页面不存在");
+  const activePage = page!;
+  if (activePage.store.slug !== "liangchen") fail(`/admin/pages/${id}`, "良丞首页模板只适用于 liangchen 店铺");
+  if (!activePage.isHome) fail(`/admin/pages/${id}`, "请在当前主页上应用良丞首页模板");
+  const categories = await db.category.findMany({ where: { storeId: activePage.storeId, isActive: true }, orderBy: { sort: "asc" }, select: { id: true } });
+  if (!categories.length) fail(`/admin/pages/${id}`, "请先创建至少一个有效商品分类");
+  await db.$transaction(async (tx) => {
+    const slugs = LIANGCHEN_CONTENT_PAGES.map((definition) => definition.slug);
+    const existing = await tx.storePage.findMany({ where: { storeId: activePage.storeId, slug: { in: [...slugs] } }, select: { id: true, slug: true } });
+    const bySlug = new Map(existing.map((item) => [item.slug, item.id]));
+    for (const definition of missingLiangchenContentPages(bySlug.keys())) {
+      const created = await tx.storePage.create({ data: { storeId: activePage.storeId, title: definition.title, slug: definition.slug, category: "品牌内容", draftJson: JSON.stringify(liangchenContentPageConfig(definition)) } });
+      bySlug.set(created.slug, created.id);
+    }
+    const config = liangchenHomeConfig(categories.map((category) => category.id), bySlug);
+    await tx.storePage.update({ where: { id: activePage.id }, data: { draftJson: JSON.stringify(config) } });
+  });
+  await audit(actor.id, "应用良丞首页模板", "StorePage", activePage.id, activePage.storeId);
+  revalidatePath("/admin/pages");
+  revalidatePath(`/admin/pages/${activePage.id}`);
+  redirect(`/admin/pages/${activePage.id}?notice=${encodeURIComponent("良丞模板已应用到草稿，请先发布五个内容页，再发布首页")}`);
 }
 
 export async function setHomePage(data: FormData) {

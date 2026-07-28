@@ -2,7 +2,9 @@ import { z } from "zod";
 
 const id = z.string().min(1).max(100);
 const httpUrl = z.string().url().refine((value) => /^https?:\/\//i.test(value), "仅支持 HTTP(S) 地址");
-const optionalUrl = z.union([httpUrl, z.literal("")]).optional();
+const templateUrl = z.string().max(500).refine((value) => /^\/templates\/(?!\/)[a-z0-9/_-]+\.(?:avif|gif|jpe?g|png|webp)$/i.test(value), "站内图片必须位于 /templates");
+const imageUrl = z.union([httpUrl, templateUrl]);
+const optionalUrl = z.union([imageUrl, z.literal("")]).optional();
 const base = z.object({ id });
 const productSource = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("all") }),
@@ -17,24 +19,28 @@ const internalOrHttpUrl = z.string().max(500).refine(
   (value) => (/^\/(?!\/)/.test(value) || /^https?:\/\//i.test(value)),
   "自定义链接仅支持站内相对地址或 HTTP(S)",
 );
-const navItem = z.object({ title: z.string().max(30), imageUrl: optionalUrl, href: z.string().max(300).default("") });
+const navIcon = z.enum(["building", "sofa", "images", "shield", "phone"]);
+const navItem = z.object({ title: z.string().max(30), imageUrl: optionalUrl, href: z.string().max(300).default(""), icon: navIcon.optional(), pageId: id.optional() });
 const slide = z.object({ title: z.string().max(80).default(""), subtitle: z.string().max(120).default(""), imageUrl: optionalUrl, href: z.string().max(300).default("") });
-const adTarget = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("product"), productId: id }),
-  z.object({ type: z.literal("category"), categoryId: id }),
-  z.object({ type: z.literal("page"), pageId: id }),
-  z.object({ type: z.literal("custom"), url: internalOrHttpUrl }),
-]);
-const imageAdItem = z.object({
-  id,
-  imageUrl: httpUrl,
-  alt: z.string().max(100).default(""),
-  target: adTarget.optional(),
-});
 const productGroupTab = z.object({
   categoryId: id,
   alias: z.string().trim().max(30).optional(),
   limit: z.number().int().min(1).max(50).nullable().default(null),
+});
+const adTarget = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("product"), productId: id }),
+  z.object({ type: z.literal("category"), categoryId: id }),
+  z.object({ type: z.literal("page"), pageId: id }),
+  z.object({ type: z.literal("productGroup"), title: z.string().max(100).optional(), groups: z.array(productGroupTab).min(1).max(15) }),
+  z.object({ type: z.literal("custom"), url: internalOrHttpUrl }),
+]);
+const imageAdItem = z.object({
+  id,
+  imageUrl,
+  alt: z.string().max(100).default(""),
+  title: z.string().max(100).default(""),
+  subtitle: z.string().max(160).default(""),
+  target: adTarget.optional(),
 });
 
 export const pageComponentV4Schema = z.discriminatedUnion("type", [
@@ -44,15 +50,15 @@ export const pageComponentV4Schema = z.discriminatedUnion("type", [
   base.extend({ type: z.literal("seriesShowcase"), title: z.string().max(100).default("探索系列"), categoryIds: z.array(id).max(8).default([]) }),
   base.extend({ type: z.literal("newProducts"), title: z.string().max(100).default("当季新品"), source: productSource }),
   base.extend({ type: z.literal("productGroupTabs"), title: z.string().max(100).default("商品分组"), groups: z.array(productGroupTab).max(15) }),
-  base.extend({ type: z.literal("imageAd"), items: z.array(imageAdItem).max(10) }),
+  base.extend({ type: z.literal("imageAd"), title: z.string().max(100).default(""), subtitle: z.string().max(160).default(""), layout: z.enum(["stack", "carousel"]).default("stack"), items: z.array(imageAdItem).max(10) }),
   base.extend({ type: z.literal("storeHeader"), style: z.enum(["compact", "hero"]).default("compact"), subtitle: z.string().max(100).default("家居美学 · 意向开单"), name: z.string().min(1).max(100).optional(), imageSource: storeHeaderImageSource.optional() }),
-  base.extend({ type: z.literal("employeeCard"), style: z.enum(["dark", "light"]).default("dark") }),
+  base.extend({ type: z.literal("employeeCard"), style: z.enum(["dark", "light", "yuncheng"]).default("dark") }),
   base.extend({ type: z.literal("text"), title: z.string().max(100), body: z.string().max(1000).default("") }),
   base.extend({ type: z.literal("richText"), html: z.string().max(20000) }),
   base.extend({ type: z.literal("productSearch"), placeholder: z.string().max(50).default("搜索商品") }),
   base.extend({ type: z.literal("categoryNav"), title: z.string().max(100).default("商品分类") }),
-  base.extend({ type: z.literal("productGrid"), title: z.string().max(100).default("精选商品"), source: productSource }),
-  base.extend({ type: z.literal("contentCard"), title: z.string().max(100), body: z.string().max(1000), imageUrl: httpUrl.optional() }),
+  base.extend({ type: z.literal("productGrid"), title: z.string().max(100).default("精选商品"), subtitle: z.string().max(160).default(""), layout: z.enum(["default", "yuncheng"]).default("default"), limit: z.number().int().min(1).max(50).nullable().default(null), source: productSource }),
+  base.extend({ type: z.literal("contentCard"), title: z.string().max(100), body: z.string().max(1000), imageUrl: imageUrl.optional() }),
   base.extend({ type: z.literal("video"), url: httpUrl, poster: httpUrl.optional() }),
   base.extend({ type: z.literal("divider") }),
 ]);
@@ -122,22 +128,28 @@ export function validatePageConfigForStore(config: PageConfigV4, available: Avai
     if (component.type === "productGroupTabs" && new Set(component.groups.map((group) => group.categoryId)).size !== component.groups.length) throw new Error("商品分组不能重复");
     if (component.type === "seriesShowcase" && component.categoryIds.some((categoryId) => !available.categoryIds.has(categoryId))) throw new Error("商品分类不属于当前店铺");
     if (component.type === "storeHeader" && component.imageSource?.type === "productMainImage" && !available.productIds.has(component.imageSource.productId)) throw new Error("店铺头部图片不属于当前店铺");
+    if (component.type === "quickNav" && component.items.some((item) => item.pageId && !available.pageIds?.has(item.pageId))) throw new Error("快捷入口页面不属于当前店铺或尚未发布");
     if (component.type === "imageAd") for (const item of component.items) {
       if (item.target?.type === "product" && !available.productIds.has(item.target.productId)) throw new Error("广告商品不属于当前店铺");
       if (item.target?.type === "category" && !available.categoryIds.has(item.target.categoryId)) throw new Error("广告分组不属于当前店铺");
       if (item.target?.type === "page" && !available.pageIds?.has(item.target.pageId)) throw new Error("广告页面不属于当前店铺或尚未发布");
+      if (item.target?.type === "productGroup") {
+        if (item.target.groups.some((group) => !available.categoryIds.has(group.categoryId))) throw new Error("广告商品分组不属于当前店铺");
+        if (new Set(item.target.groups.map((group) => group.categoryId)).size !== item.target.groups.length) throw new Error("广告商品分组不能重复");
+      }
     }
   }
   if (home && !config.components.some((component) => component.type === "productGrid" || component.type === "productGroupTabs")) throw new Error("主页必须包含商品网格或商品分组");
   return config;
 }
 
-export function resolveImageAdHref(target: ImageAdTarget | undefined, context: { storeSlug: string; refCode?: string; productIds: Set<string>; categoryIds: Set<string>; pages: Map<string, string> }) {
+export function resolveImageAdHref(target: ImageAdTarget | undefined, context: { storeSlug: string; pageId?: string; itemId?: string; refCode?: string; productIds: Set<string>; categoryIds: Set<string>; pages: Map<string, string> }) {
   if (!target) return null;
   const suffix = context.refCode ? `?ref=${encodeURIComponent(context.refCode)}` : "";
   if (target.type === "product") return context.productIds.has(target.productId) ? `/s/${context.storeSlug}/product/${target.productId}${suffix}` : null;
   if (target.type === "category") return context.categoryIds.has(target.categoryId) ? `/s/${context.storeSlug}/category?category=${encodeURIComponent(target.categoryId)}${context.refCode ? `&ref=${encodeURIComponent(context.refCode)}` : ""}` : null;
   if (target.type === "page") { const slug = context.pages.get(target.pageId); return slug ? `/s/${context.storeSlug}/p/${slug}${suffix}` : null; }
+  if (target.type === "productGroup") return context.pageId && context.itemId ? `/s/${context.storeSlug}/group/${context.pageId}/${context.itemId}${suffix}` : null;
   return target.url;
 }
 
@@ -146,13 +158,13 @@ export function blankPageConfig(): PageConfigV4 {
 }
 
 export function homeTemplateConfig(): PageConfigV4 {
-  return { version: 4, themeColor: "#5f4939", components: [
+  return { version: 4, themeColor: "#30302e", components: [
     { id: "template-hero", type: "heroCarousel", slides: [] },
-    { id: "template-card", type: "employeeCard", style: "dark" },
-    { id: "template-nav", type: "quickNav", items: [] },
-    { id: "template-news", type: "announcement", messages: ["欢迎来到我们的线上展厅"] },
-    { id: "template-ad", type: "imageAd", items: [] },
-    { id: "template-new", type: "newProducts", title: "当季新品", source: { mode: "all" } },
-    { id: "template-products", type: "productGroupTabs", title: "精选商品", groups: [] },
+    { id: "template-card", type: "employeeCard", style: "yuncheng" },
+    { id: "template-nav", type: "quickNav", items: ["品牌介绍", "系列产品", "空间案例", "售后保障", "专属接待"].map((title, index) => ({ title, href: "", icon: (["building", "sofa", "images", "shield", "phone"] as const)[index] })) },
+    { id: "template-news", type: "announcement", messages: ["限时活动，欢迎致电咨询"] },
+    { id: "template-series", type: "imageAd", title: "两大系列", subtitle: "诚邀品鉴", layout: "stack", items: [] },
+    { id: "template-new", type: "imageAd", title: "新品推荐", subtitle: "空间展示 · 诚邀品鉴", layout: "carousel", items: [] },
+    { id: "template-products", type: "productGrid", title: "爆款商品", subtitle: "甄选好物", layout: "yuncheng", limit: 9, source: { mode: "all" } },
   ] };
 }

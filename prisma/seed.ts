@@ -1,6 +1,7 @@
 import { PrismaClient, Role } from "@prisma/client";
 import { hash } from "bcryptjs";
 import { homeTemplateConfig } from "../lib/page-config";
+import { LIANGCHEN_CONTENT_PAGES, liangchenContentPageConfig, liangchenHomeConfig } from "../lib/liangchen-template";
 
 const prisma = new PrismaClient();
 
@@ -48,7 +49,7 @@ async function main() {
   await prisma.user.create({ data: { username: "enterprise_admin", passwordHash, role: Role.ENTERPRISE_ADMIN, name: "企业管理员", enterpriseId: enterprise.id } });
 
   const storeA = await prisma.store.create({
-    data: { slug: "liangchen", name: "良丞家具", logoUrl: furniture.room, phone: "400-888-1024", address: "上海市闵行区家居产业园 18 号" },
+    data: { slug: "liangchen", name: "良丞家具", logoUrl: "/templates/liangchen/avatar.png", phone: "400-888-1024", address: "上海市闵行区家居产业园 18 号", defaultCardJson: JSON.stringify({ name: "良丞木作主理人", title: "Mrs.方小姐", bio: "从原木定制到全屋家具一站式整装", avatarUrl: "/templates/liangchen/avatar.png" }) },
   });
   const storeB = await prisma.store.create({
     data: { slug: "yunqi", name: "云栖家居", logoUrl: furniture.sofa, phone: "400-886-2026", address: "杭州市余杭区创景路 66 号" },
@@ -73,11 +74,16 @@ async function main() {
 
   const products = await prisma.product.findMany();
   await prisma.productVariant.createMany({ data: products.map((product) => ({ productId: product.id, name: product.specification, code: `${product.code}-DEFAULT`, price: product.price })) });
-  for (const store of [storeA, storeB]) {
-    const storeProducts = products.filter((product) => product.storeId === store.id);
-    const config = JSON.stringify({...homeTemplateConfig(),components:homeTemplateConfig().components.map(component=>component.type==="productGrid"?{...component,source:{mode:"selected" as const,productIds:storeProducts.map(product=>product.id)}}:component)});
-    await prisma.storePage.create({ data: { storeId: store.id, title: "店铺首页", slug: "home", draftJson: config, publishedJson: config, isHome: true, publishedAt: new Date() } });
+  const liangchenPages = new Map<string, string>();
+  for (const definition of LIANGCHEN_CONTENT_PAGES) {
+    const config = JSON.stringify(liangchenContentPageConfig(definition));
+    const page = await prisma.storePage.create({ data: { storeId: storeA.id, title: definition.title, slug: definition.slug, category: "品牌内容", draftJson: config, publishedJson: config, publishedAt: new Date() } });
+    liangchenPages.set(page.slug, page.id);
   }
+  const liangchenConfig = JSON.stringify(liangchenHomeConfig([living.id, dining.id], liangchenPages));
+  await prisma.storePage.create({ data: { storeId: storeA.id, title: "店铺首页", slug: "home", draftJson: liangchenConfig, publishedJson: liangchenConfig, isHome: true, publishedAt: new Date() } });
+  const genericConfig = JSON.stringify(homeTemplateConfig());
+  await prisma.storePage.create({ data: { storeId: storeB.id, title: "店铺首页", slug: "home", draftJson: genericConfig, publishedJson: genericConfig, isHome: true, publishedAt: new Date() } });
   await prisma.pageTemplate.create({ data: { name: "家居店铺首页", industry: "家居", purpose: "店铺首页", isFree: true, configJson: JSON.stringify(homeTemplateConfig()) } });
 }
 

@@ -1,42 +1,45 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, MessageCircle, Phone, Search } from "lucide-react";
+import { Building2, ChevronRight, Images, MessageCircle, Phone, PhoneCall, Search, ShieldCheck, Sofa } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { PageConfigV4, PageComponentV4 } from "@/lib/page-config";
 import { resolveImageAdHref } from "@/lib/page-config";
 import { storeHref } from "@/lib/public-links";
 import { ProductCard, type ProductCardProduct } from "@/components/public/product-card";
 
-type HomeProduct = ProductCardProduct & { categoryId: string | null };
-type HomeCatalog = {
+export type HomeProduct = ProductCardProduct & { categoryId: string | null };
+export type HomeCatalog = {
   store: { slug: string; name: string; logoUrl: string | null };
   categories: Array<{ id: string; name: string }>;
   products: HomeProduct[];
   customerActive: boolean;
 };
-type Employee = { name: string; phone: string | null; wechat: string | null; title: string | null; bio: string | null; avatarUrl: string | null; serviceQrUrl?: string | null };
+export type Employee = { name: string; phone: string | null; wechat: string | null; title: string | null; bio: string | null; avatarUrl: string | null; serviceQrUrl?: string | null };
 type StorePageLink = { id: string; slug: string };
 
-export function PublicHome({ catalog, config, employee, refCode, favoriteIds, pages = [], renderComponent }: { catalog: HomeCatalog; config: PageConfigV4; employee: Employee; refCode?: string; favoriteIds: string[]; pages?: StorePageLink[]; renderComponent?: (component: PageComponentV4, content: ReactNode) => ReactNode }) {
+export function PublicHome({ catalog, config, employee, currentPageId, refCode, favoriteIds, pages = [], renderComponent }: { catalog: HomeCatalog; config: PageConfigV4; employee: Employee; currentPageId?: string; refCode?: string; favoriteIds: string[]; pages?: StorePageLink[]; renderComponent?: (component: PageComponentV4, content: ReactNode) => ReactNode }) {
   const favoriteSet = new Set(favoriteIds);
   const fallback = catalog.products[0]?.mainImageUrl || catalog.store.logoUrl || "";
   const [activeGroups, setActiveGroups] = useState<Record<string, string>>({});
+  const [activeSlides, setActiveSlides] = useState<Record<string, number>>({});
+  const heroRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const bySource = (component: Extract<PageComponentV4, { type: "productGrid" | "newProducts" }>) => catalog.products.filter((product) => component.source.mode === "all" || (component.source.mode === "category" ? product.categoryId === component.source.categoryId : component.source.productIds.includes(product.id)));
-  const productRow = (title: string, products: HomeProduct[], grid = false) => <section className="public-section"><header><h2>{title}</h2><Link href={storeHref(catalog.store.slug, "category", refCode)}>查看全部 <ChevronRight size={14}/></Link></header><div className={grid ? "public-grid" : "public-product-row"}>{products.map((product) => <ProductCard key={product.id} product={product} slug={catalog.store.slug} refCode={refCode} favorite={favoriteSet.has(product.id)} customerActive={catalog.customerActive}/>)}</div>{!products.length && <div className="public-empty">暂无可展示商品</div>}</section>;
+  const productRow = (component: Extract<PageComponentV4, { type: "productGrid" | "newProducts" }>, products: HomeProduct[], grid = false) => <section className={`public-section ${component.type === "productGrid" && component.layout === "yuncheng" ? "public-yuncheng-products" : ""}`}><header><div><h2>{component.title}</h2>{"subtitle" in component && component.subtitle && <p>{component.subtitle}</p>}</div><Link href={storeHref(catalog.store.slug, "category", refCode)}>查看全部 <ChevronRight size={14}/></Link></header>{component.type === "productGrid" && component.layout === "yuncheng" ? <div className="public-picture-grid">{products.map((product) => <Link href={storeHref(catalog.store.slug, `product/${product.id}`, refCode)} key={product.id}><img src={product.mainImageUrl} alt={product.name}/><span>{product.name}</span></Link>)}</div> : <div className={grid ? "public-grid" : "public-product-row"}>{products.map((product) => <ProductCard key={product.id} product={product} slug={catalog.store.slug} refCode={refCode} favorite={favoriteSet.has(product.id)} customerActive={catalog.customerActive}/>)}</div>}{!products.length && <div className="public-empty">暂无可展示商品</div>}</section>;
 
   function block(item: PageComponentV4) {
     if (item.type === "heroCarousel") {
       const slides = item.slides.length ? item.slides : [{ title: catalog.store.name, subtitle: "发现理想生活的更多可能", imageUrl: fallback, href: "" }];
-      return <section className="public-hero"><Link className="public-hero-search" href={storeHref(catalog.store.slug, "search", refCode)}><Search size={16}/><span>搜索商品</span></Link><div className="public-hero-track">{slides.map((slide, index) => { const body = <><img src={slide.imageUrl || fallback} alt={slide.title}/><span/><div><small>LIANGCHEN COLLECTION</small><h1>{slide.title || catalog.store.name}</h1><p>{slide.subtitle}</p></div><i>{index + 1} / {slides.length}</i></>; return slide.href ? <Link key={index} href={slide.href}>{body}</Link> : <div key={index}>{body}</div>; })}</div></section>;
+      const active = activeSlides[item.id] ?? 0;
+      return <section className="public-hero"><Link className="public-hero-search" href={storeHref(catalog.store.slug, "search", refCode)}><Search size={16}/><span>搜索商品</span></Link><div className="public-hero-track" ref={(node)=>{heroRefs.current[item.id]=node}} onScroll={(event)=>{const width=event.currentTarget.clientWidth;if(width)setActiveSlides((current)=>({...current,[item.id]:Math.round(event.currentTarget.scrollLeft/width)}))}}>{slides.map((slide, index) => { const body = <><img src={slide.imageUrl || fallback} alt={slide.title}/>{(slide.title||slide.subtitle)&&<><span/><div><h1>{slide.title}</h1><p>{slide.subtitle}</p></div></>}<i>{index + 1} / {slides.length}</i></>; return slide.href ? <Link key={index} href={slide.href}>{body}</Link> : <div key={index}>{body}</div>; })}</div><nav className="public-hero-dots" aria-label="轮播切换">{slides.map((_,index)=><button type="button" className={active===index?"active":""} aria-label={`第 ${index+1} 张`} onClick={()=>heroRefs.current[item.id]?.scrollTo({left:(heroRefs.current[item.id]?.clientWidth??0)*index,behavior:"smooth"})} key={index}/>)}</nav></section>;
     }
-    if (item.type === "employeeCard") return <section className="public-adviser"><img src={employee.avatarUrl || catalog.store.logoUrl || fallback} alt={employee.name}/><div><small>专属名片</small><h3>{employee.name}</h3><strong>{employee.title || "家居顾问"}</strong><p>{employee.bio || "为你提供专业选品服务"}</p></div><nav>{employee.phone && <a href={`tel:${employee.phone}`} aria-label="致电"><Phone size={17}/><span>电话</span></a>}{employee.wechat && <button aria-label="微信" onClick={() => employee.serviceQrUrl ? window.open(employee.serviceQrUrl, "_blank", "noopener,noreferrer") : navigator.clipboard.writeText(employee.wechat!)}><MessageCircle size={17}/><span>微信</span></button>}</nav></section>;
-    if (item.type === "quickNav") { const entries = item.items.length ? item.items.slice(0, 5) : catalog.categories.slice(0, 5).map((category) => ({ title: category.name, imageUrl: "", href: storeHref(catalog.store.slug, `category?category=${category.id}`, refCode) })); return <nav className="public-quick">{entries.map((entry, index) => <Link href={entry.href || storeHref(catalog.store.slug, "category", refCode)} key={index}><span className="public-quick-icon">{entry.imageUrl ? <img src={entry.imageUrl} alt=""/> : <ChevronRight size={19}/>}</span><b>{entry.title}</b></Link>)}</nav>; }
-    if (item.type === "announcement") return <div className="public-news"><b>良丞动态</b><span>{item.messages[0] || `欢迎来到${catalog.store.name}`}</span></div>;
+    if (item.type === "employeeCard") return <section className={`public-adviser public-adviser-${item.style}`}><img src={employee.avatarUrl || catalog.store.logoUrl || fallback} alt={employee.name}/><div><strong>{employee.title || "店铺顾问"}</strong><h3>{employee.name}</h3><p>{employee.bio || "为你提供专业选品服务"}</p></div><nav>{employee.phone && <a href={`tel:${employee.phone}`} aria-label="致电"><Phone size={17}/><span>电话</span></a>}{employee.wechat && <button aria-label="微信" onClick={() => employee.serviceQrUrl ? window.open(employee.serviceQrUrl, "_blank", "noopener,noreferrer") : navigator.clipboard.writeText(employee.wechat!)}><MessageCircle size={17}/><span>微信</span></button>}</nav></section>;
+    if (item.type === "quickNav") { const iconMap={building:Building2,sofa:Sofa,images:Images,shield:ShieldCheck,phone:PhoneCall}; const pageMap=new Map(pages.map((page)=>[page.id,page.slug])); const entries = item.items.length ? item.items.slice(0, 5) : catalog.categories.slice(0, 5).map((category) => ({ title: category.name, imageUrl: "", href: storeHref(catalog.store.slug, `category?category=${category.id}`, refCode) })); return <nav className="public-quick">{entries.map((entry, index) => {const Icon="icon" in entry&&entry.icon?iconMap[entry.icon]:ChevronRight;const pageSlug="pageId" in entry&&entry.pageId?pageMap.get(entry.pageId):undefined;const href=pageSlug?storeHref(catalog.store.slug,`p/${pageSlug}`,refCode):entry.href||storeHref(catalog.store.slug,"category",refCode);return <Link href={href} key={index}><span className="public-quick-icon">{entry.imageUrl ? <img src={entry.imageUrl} alt=""/> : <Icon size={20}/>}</span><b>{entry.title}</b></Link>})}</nav>; }
+    if (item.type === "announcement") return <div className="public-news"><b>限时活动</b><span>{item.messages[0] || `欢迎来到${catalog.store.name}`}</span></div>;
     if (item.type === "seriesShowcase") { const categories = (item.categoryIds.length ? catalog.categories.filter((category) => item.categoryIds.includes(category.id)) : catalog.categories.slice(0, 2)); return <section className="public-section"><header><h2>{item.title}</h2></header><div className="public-series">{categories.map((category) => <Link href={storeHref(catalog.store.slug, `category?category=${category.id}`, refCode)} key={category.id}><img src={catalog.products.find((product) => product.categoryId === category.id)?.mainImageUrl || fallback} alt=""/><span>{category.name}</span></Link>)}</div></section>; }
-    if (item.type === "newProducts") return productRow(item.title, bySource(item).slice(0, 8));
-    if (item.type === "productGrid") return productRow(item.title, bySource(item).slice(0, 18), true);
+    if (item.type === "newProducts") return productRow(item, bySource(item).slice(0, 8));
+    if (item.type === "productGrid") return productRow(item, bySource(item).slice(0, item.limit ?? 18), true);
     if (item.type === "productGroupTabs") {
       const first = item.groups[0]?.categoryId ?? "";
       const active = activeGroups[item.id] || first;
@@ -47,7 +50,7 @@ export function PublicHome({ catalog, config, employee, refCode, favoriteIds, pa
     }
     if (item.type === "imageAd") {
       const context = { storeSlug: catalog.store.slug, refCode, productIds: new Set(catalog.products.map((product) => product.id)), categoryIds: new Set(catalog.categories.map((category) => category.id)), pages: new Map(pages.map((page) => [page.id, page.slug])) };
-      return <section className="public-image-ads">{item.items.map((entry) => { const href = resolveImageAdHref(entry.target, context); const picture = <img src={entry.imageUrl} alt={entry.alt}/>; if (!href) return <div key={entry.id}>{picture}</div>; const external = /^https?:\/\//i.test(href); return <a href={href} key={entry.id} {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>{picture}</a>; })}</section>;
+      return <section className={`public-image-ads public-image-ads-${item.layout} ${item.title||item.subtitle?"public-image-ads-section":"public-image-ads-content"}`}>{(item.title||item.subtitle)&&<header><p>{item.subtitle}</p><h2>{item.title}</h2></header>}<div>{item.items.map((entry) => { const href = resolveImageAdHref(entry.target, { ...context, pageId: currentPageId, itemId: entry.id }); const picture = <><img src={entry.imageUrl} alt={entry.alt}/>{(entry.title||entry.subtitle)&&<span><b>{entry.title}</b><small>{entry.subtitle}</small></span>}</>; if (!href) return <div key={entry.id}>{picture}</div>; const external = /^https?:\/\//i.test(href); return <a href={href} key={entry.id} {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>{picture}</a>; })}</div></section>;
     }
     if (item.type === "storeHeader") { const imageSource = item.imageSource; const image = imageSource?.type === "productMainImage" ? catalog.products.find((product) => product.id === imageSource.productId)?.mainImageUrl : catalog.store.logoUrl; return <header className="public-store-head"><img src={image || fallback} alt=""/><div><h1>{item.name ?? catalog.store.name}</h1><p>{item.subtitle}</p></div></header>; }
     if (item.type === "text" || item.type === "contentCard") return <section className="public-copy">{"imageUrl" in item && item.imageUrl && <img src={item.imageUrl} alt=""/>}<h2>{item.title}</h2><p>{item.body}</p></section>;
