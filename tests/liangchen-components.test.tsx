@@ -22,12 +22,15 @@ describe("liangchen public components", () => {
     expect(html).toContain('<div class="public-hero-track"><div><img');
   });
 
-  it("renders the yuncheng employee card and hides unavailable contacts", () => {
+  it("renders contact values in tooltips and accessible labels", () => {
     const config = parsePageConfig({ version: 4, themeColor: "#30302e", components: [{ id: "card", type: "employeeCard", style: "yuncheng" }] });
-    const html = renderToStaticMarkup(<PublicHome catalog={catalog} config={config} employee={{ name: "方小姐", phone: "13800000000", wechat: null, title: "木作主理人", bio: "一站式整装", avatarUrl: "/templates/liangchen/avatar.png" }} favoriteIds={[]}/>);
+    const html = renderToStaticMarkup(<PublicHome catalog={catalog} config={config} employee={{ name: "方小姐", phone: "13800000000", wechat: "fang-wechat", title: "木作主理人", bio: "一站式整装", avatarUrl: "/templates/liangchen/avatar.png" }} favoriteIds={[]}/>);
     expect(html).toContain("public-adviser-yuncheng");
     expect(html).toContain("tel:13800000000");
-    expect(html).not.toContain('aria-label="微信"');
+    expect(html).toContain('aria-label="致电 13800000000"');
+    expect(html).toContain('aria-label="复制微信号 fang-wechat"');
+    expect(html).toContain('<small class="public-contact-tip" role="tooltip">13800000000</small>');
+    expect(html).toContain('<small class="public-contact-tip" role="tooltip">fang-wechat</small>');
   });
 
   it("renders three-column product labels and detail links with ref", () => {

@@ -13,7 +13,7 @@ import { normalizeCart,updateCart } from "../lib/public-cart";
 import { customerHref,storeHref } from "../lib/public-links";
 import { defaultPublicStoreSlug,validatePreviewStoreSlug } from "../lib/server-env";
 import { runtimeDatabaseUrl } from "../lib/db";
-import { LIANGCHEN_CONTENT_PAGES, liangchenHomeConfig, missingLiangchenContentPages } from "../lib/liangchen-template";
+import { canApplyLiangchenHomeTemplate, LIANGCHEN_CONTENT_PAGES, liangchenHomeConfig, missingLiangchenContentPages } from "../lib/liangchen-template";
 import { productNameWithCode, resolveProductGroup } from "../lib/product-group";
 import { scrollCarouselTo } from "../lib/carousel";
 
@@ -34,6 +34,7 @@ describe("page config",()=>{
 });
 
 describe("liangchen template and product groups",()=>{
+  it("allows every store's current homepage and rejects ordinary pages",()=>{expect(canApplyLiangchenHomeTemplate({isHome:true})).toBe(true);expect(canApplyLiangchenHomeTemplate({isHome:false})).toBe(false)});
   it("builds the complete snapshot without remote image URLs",()=>{const pageIds=new Map(LIANGCHEN_CONTENT_PAGES.map((page,index)=>[page.slug,`p${index}`]));const config=liangchenHomeConfig(["c1","c2"],pageIds);expect(config.components.map((item)=>item.type)).toEqual(["productSearch","heroCarousel","employeeCard","quickNav","announcement","imageAd","imageAd","productGrid"]);expect(JSON.stringify(config)).not.toContain("aliyuncs.com");expect(LIANGCHEN_CONTENT_PAGES.flatMap((page)=>page.images)).toHaveLength(13);const series=config.components.find((item)=>item.id==="liangchen-series");expect(series).toMatchObject({type:"imageAd",items:[{target:{type:"productGroup",groups:[{categoryId:"c1"},{categoryId:"c2"}]}},{target:{type:"productGroup",groups:[{categoryId:"c1"},{categoryId:"c2"}]}}]})});
   it("keeps existing content-page slugs",()=>expect(missingLiangchenContentPages(["brand-story","contact"]).map((page)=>page.slug)).toEqual(["product-intro","case","after-sales"]));
   it("filters stale groups, preserves order and alias, and limits products",()=>{const target={type:"productGroup" as const,groups:[{categoryId:"stale",limit:null},{categoryId:"c2",alias:"餐厅",limit:1},{categoryId:"c1",limit:null}]};const products=[{categoryId:"c2",id:1},{categoryId:"c2",id:2},{categoryId:"c1",id:3}];const result=resolveProductGroup(target,[{id:"c1",name:"客厅"},{id:"c2",name:"餐厨"}],products);expect(result.groups.map((group)=>group.name)).toEqual(["餐厅","客厅"]);expect(result.active?.categoryId).toBe("c2");expect(result.visibleProducts).toEqual([products[0]])});

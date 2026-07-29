@@ -6,7 +6,7 @@ export const publicOrderSchema = z.object({
   ref: z.string().optional().nullable(),
   clientRequestId: z.string().uuid(),
   customerName: z.string().trim().max(50).optional().default(""),
-  customerPhone: z.string().trim().regex(/^1\d{10}$/, "请输入正确的手机号").optional().default(""),
+  customerPhone: z.string().trim().refine((value) => value === "" || /^1\d{10}$/.test(value), "请输入正确的手机号").optional().default(""),
   customerAddress: z.string().trim().max(200).default(""),
   customerRemark: z.string().trim().max(500).default(""),
   logisticsName: z.string().trim().max(100).default(""),

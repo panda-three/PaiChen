@@ -8,17 +8,94 @@ import type { PublicCatalog } from "@/lib/public-catalog";
 import { customerHref, storeHref } from "@/lib/public-links";
 
 export function PublicCartPage({ catalog, refCode }: { catalog: PublicCatalog; refCode?: string }) {
-  const { cart, ready, change, remark, clear } = usePublicCart(); const [message, setMessage] = useState(""); const [submitting, setSubmitting] = useState(false); const [shippingFee, setShippingFee] = useState(0); const [installationFee, setInstallationFee] = useState(0);
+  const { cart, ready, change, remark, clear } = usePublicCart();
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [shippingFee, setShippingFee] = useState(0);
+  const [installationFee, setInstallationFee] = useState(0);
   const requestId = useRef<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  const lines = cart.lines.map((line) => { const product = catalog.products.find((item) => item.id === line.productId); const variant = product?.variants.find((item) => item.id === line.variantId); return { ...line, product, variant }; }); const valid = lines.filter((line) => line.product);
+  const assisted = catalog.orderAccess === "employee" || catalog.orderAccess === "storeAdmin";
+  const canSubmit = catalog.orderAccess === "customer" || assisted;
+  const lines = cart.lines.map((line) => {
+    const product = catalog.products.find((item) => item.id === line.productId);
+    const variant = product?.variants.find((item) => item.id === line.variantId);
+    return { ...line, product, variant };
+  });
+  const valid = lines.filter((line) => line.product);
   const productAmount = valid.reduce((sum, line) => sum + Number(line.variant?.price || line.product?.price || 0) * line.quantity, 0);
   const quantity = valid.reduce((sum, line) => sum + line.quantity, 0);
   const total = productAmount + shippingFee + installationFee;
   const money = (value: number) => `¥${value.toFixed(2)}`;
-  function clearCustomerInfo() { const form = formRef.current; if (!form) return; for (const name of ["customerName", "customerPhone", "address"]) { const input = form.elements.namedItem(name); if (input instanceof HTMLInputElement) input.value = ""; } }
-  async function submit(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); if (!catalog.customerActive) { location.href = customerHref(catalog.store.slug, refCode, location.pathname + location.search); return; } setSubmitting(true); requestId.current ??= crypto.randomUUID(); const form = new FormData(event.currentTarget); const response = await fetch("/api/public/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeSlug: catalog.store.slug, ref: refCode || null, clientRequestId: requestId.current, customerName: form.get("customerName"), customerPhone: form.get("customerPhone"), customerAddress: form.get("address"), logisticsName: form.get("logisticsName"), logisticsAddress: form.get("logisticsAddress"), logisticsPhone: form.get("logisticsPhone"), shippingFee: form.get("shippingFee"), installationFee: form.get("installationFee"), customerRemark: form.get("remark"), items: valid.map((line) => ({ productId: line.productId, variantId: line.variantId, quantity: line.quantity, remark: line.remark })) }) }); const result = await response.json(); setSubmitting(false); if (!response.ok) { setMessage(result.error || "提交失败"); return; } clear(); setMessage(`提交成功 · ${result.orderNo}`); }
+
+  function clearCustomerInfo() {
+    const form = formRef.current;
+    if (!form) return;
+    for (const name of ["customerName", "customerPhone", "address"]) {
+      const input = form.elements.namedItem(name);
+      if (input instanceof HTMLInputElement) input.value = "";
+    }
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (catalog.orderAccess === "anonymous") {
+      location.href = customerHref(catalog.store.slug, refCode, location.pathname + location.search);
+      return;
+    }
+    if (!canSubmit) {
+      setMessage("当前账号无权在此店铺开单");
+      return;
+    }
+    setSubmitting(true);
+    requestId.current ??= crypto.randomUUID();
+    const form = new FormData(event.currentTarget);
+    const response = await fetch("/api/public/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        storeSlug: catalog.store.slug,
+        ref: refCode || null,
+        clientRequestId: requestId.current,
+        customerName: form.get("customerName"),
+        customerPhone: form.get("customerPhone"),
+        customerAddress: form.get("address"),
+        logisticsName: form.get("logisticsName"),
+        logisticsAddress: form.get("logisticsAddress"),
+        logisticsPhone: form.get("logisticsPhone"),
+        shippingFee: form.get("shippingFee"),
+        installationFee: form.get("installationFee"),
+        customerRemark: form.get("remark"),
+        items: valid.map((line) => ({ productId: line.productId, variantId: line.variantId, quantity: line.quantity, remark: line.remark })),
+      }),
+    });
+    const result = await response.json();
+    setSubmitting(false);
+    if (!response.ok) {
+      setMessage(result.error || "提交失败");
+      return;
+    }
+    clear();
+    setMessage(`提交成功 · ${result.orderNo}`);
+  }
+
   if (!ready) return <main className="public-cart"><div className="public-empty">正在读取开单商品…</div></main>;
   if (message.startsWith("提交成功")) return <main className="public-cart public-success"><Check/><h1>意向单已提交</h1><p>{message}</p><p>顾问会尽快与你联系，本次提交不会在线扣款或扣减库存。</p><Link href={storeHref(catalog.store.slug, "", refCode)}>返回首页</Link></main>;
-  return <main className="public-cart">{lines.some((line) => !line.product) && <div className="public-warning">部分商品已下架，请删除后再提交。</div>}{lines.length > 0 ? <form ref={formRef} className="public-order-form" onSubmit={submit}><section className="public-order-card"><h2>客户信息</h2><div className="public-order-fields"><input name="customerName" maxLength={50} defaultValue={catalog.customerProfile?.name || ""} placeholder="客户姓名（散客可空）"/><input name="customerPhone" inputMode="tel" maxLength={11} defaultValue={catalog.customerProfile?.phone || ""} placeholder="手机号"/><input name="address" maxLength={200} placeholder="收货地址"/></div><div className="public-customer-actions"><button type="button" onClick={() => { location.href = customerHref(catalog.store.slug, refCode, location.pathname + location.search); }}><RefreshCw/>更换客户</button><button type="button" disabled><Check/>保存客户</button><button type="button" onClick={clearCustomerInfo}>清除信息</button></div></section><section className="public-order-card public-products-card"><header><h2>商品 ({valid.length})</h2><Link href={storeHref(catalog.store.slug, "category", refCode)}><Plus/>添加</Link></header><div className="public-cart-lines">{lines.map((line) => <article key={`${line.productId}:${line.variantId}`}>{line.product ? <><img src={line.variant?.imageUrl || line.product.mainImageUrl} alt=""/><div className="public-line-main"><h3>{line.product.name}{line.variant?.name ? ` ${line.variant.name}` : ""}</h3><label>单价￥<span>{Number(line.variant?.price || line.product.price || 0).toFixed(0)}</span></label></div><div className="public-line-side"><div><button type="button" aria-label="减少数量" onClick={() => change(line.productId, line.variantId, -1)}><Minus/></button><span>{line.quantity}</span><button type="button" aria-label="增加数量" onClick={() => change(line.productId, line.variantId, 1)}><Plus/></button></div><p>小计 <strong>{money(Number(line.variant?.price || line.product.price || 0) * line.quantity)}</strong></p></div><input value={line.remark} maxLength={200} onChange={(event) => remark(line.productId, line.variantId, event.target.value)} placeholder="商品备注"/><button className="public-line-remove" type="button" aria-label={`删除${line.product.name}`} onClick={() => change(line.productId, line.variantId, -line.quantity)}><Trash2/></button></> : <><div className="public-line-main"><h3>商品已失效</h3></div><button className="public-line-remove" type="button" onClick={() => change(line.productId, line.variantId, -line.quantity)}><Trash2/></button></>}</article>)}</div></section><section className="public-order-card"><h2>物流信息</h2><div className="public-order-fields"><input name="logisticsName" maxLength={100} placeholder="物流名称/快递公司"/><input name="logisticsAddress" maxLength={200} placeholder="物流发货地址"/><input name="logisticsPhone" inputMode="tel" maxLength={30} placeholder="物流联系电话"/></div></section><section className="public-order-card"><h2>费用</h2><div className="public-fees"><label>运费 ￥<input name="shippingFee" inputMode="decimal" type="number" min="0" step="0.01" placeholder="0.00" onChange={(event) => setShippingFee(Number(event.target.value) || 0)}/></label><label>安装费 ￥<input name="installationFee" inputMode="decimal" type="number" min="0" step="0.01" placeholder="0.00" onChange={(event) => setInstallationFee(Number(event.target.value) || 0)}/></label></div></section><section className="public-order-card public-remark-card"><textarea name="remark" maxLength={500} placeholder="订单备注（可选）"/></section>{message && <p className="public-order-message">{message}</p>}<footer className="public-order-submit"><div><span>{valid.length} 款商品 · {quantity} 件</span><strong>{money(total)}</strong></div><button disabled={submitting || valid.length !== lines.length}>{catalog.customerActive ? submitting ? "提交中…" : "确认提交" : "登录后提交"}</button></footer></form> : <div className="public-empty"><ShoppingBag/><h2>还没有选择商品</h2><Link href={storeHref(catalog.store.slug, "category", refCode)}>去逛逛</Link></div>}</main>;
+
+  const submitLabel = catalog.orderAccess === "anonymous" ? "登录后提交" : catalog.orderAccess === "forbidden" ? "当前账号不可开单" : submitting ? "提交中…" : "确认提交";
+  return <main className="public-cart">
+    {catalog.orderAccess === "forbidden" && <div className="public-warning">当前账号无权在此店铺开单，请使用本店已启用的客户、员工或店铺管理员账号。</div>}
+    {lines.some((line) => !line.product) && <div className="public-warning">部分商品已下架，请删除后再提交。</div>}
+    {lines.length > 0 ? <form ref={formRef} className="public-order-form" onSubmit={submit}>
+      <section className="public-order-card"><h2>客户信息</h2><div className="public-order-fields"><input name="customerName" maxLength={50} required={assisted} defaultValue={catalog.customerProfile?.name || ""} placeholder={assisted ? "客户姓名" : "客户姓名（散客可空）"}/><input name="customerPhone" inputMode="tel" maxLength={11} required={assisted} pattern={assisted ? "1[0-9]{10}" : undefined} defaultValue={catalog.customerProfile?.phone || ""} placeholder="手机号"/><input name="address" maxLength={200} placeholder="收货地址"/></div>
+        {catalog.orderAccess === "customer" && <div className="public-customer-actions"><button type="button" onClick={() => { location.href = customerHref(catalog.store.slug, refCode, location.pathname + location.search); }}><RefreshCw/>更换客户</button><button type="button" disabled><Check/>保存客户</button><button type="button" onClick={clearCustomerInfo}>清除信息</button></div>}
+        {assisted && <div className="public-customer-actions"><button type="button" onClick={clearCustomerInfo}>清除信息</button></div>}
+      </section>
+      <section className="public-order-card public-products-card"><header><h2>商品 ({valid.length})</h2><Link href={storeHref(catalog.store.slug, "category", refCode)}><Plus/>添加</Link></header><div className="public-cart-lines">{lines.map((line) => <article key={`${line.productId}:${line.variantId}`}>{line.product ? <><img src={line.variant?.imageUrl || line.product.mainImageUrl} alt=""/><div className="public-line-main"><h3>{line.product.name}{line.variant?.name ? ` ${line.variant.name}` : ""}</h3><label>单价￥<span>{Number(line.variant?.price || line.product.price || 0).toFixed(0)}</span></label></div><div className="public-line-side"><div><button type="button" aria-label="减少数量" onClick={() => change(line.productId, line.variantId, -1)}><Minus/></button><span>{line.quantity}</span><button type="button" aria-label="增加数量" onClick={() => change(line.productId, line.variantId, 1)}><Plus/></button></div><p>小计 <strong>{money(Number(line.variant?.price || line.product.price || 0) * line.quantity)}</strong></p></div><input value={line.remark} maxLength={200} onChange={(event) => remark(line.productId, line.variantId, event.target.value)} placeholder="商品备注"/><button className="public-line-remove" type="button" aria-label={`删除${line.product.name}`} onClick={() => change(line.productId, line.variantId, -line.quantity)}><Trash2/></button></> : <><div className="public-line-main"><h3>商品已失效</h3></div><button className="public-line-remove" type="button" onClick={() => change(line.productId, line.variantId, -line.quantity)}><Trash2/></button></>}</article>)}</div></section>
+      <section className="public-order-card"><h2>物流信息</h2><div className="public-order-fields"><input name="logisticsName" maxLength={100} placeholder="物流名称/快递公司"/><input name="logisticsAddress" maxLength={200} placeholder="物流发货地址"/><input name="logisticsPhone" inputMode="tel" maxLength={30} placeholder="物流联系电话"/></div></section>
+      <section className="public-order-card"><h2>费用</h2><div className="public-fees"><label>运费 ￥<input name="shippingFee" inputMode="decimal" type="number" min="0" step="0.01" placeholder="0.00" onChange={(event) => setShippingFee(Number(event.target.value) || 0)}/></label><label>安装费 ￥<input name="installationFee" inputMode="decimal" type="number" min="0" step="0.01" placeholder="0.00" onChange={(event) => setInstallationFee(Number(event.target.value) || 0)}/></label></div></section>
+      <section className="public-order-card public-remark-card"><textarea name="remark" maxLength={500} placeholder="订单备注（可选）"/></section>{message && <p className="public-order-message">{message}</p>}
+      <footer className="public-order-submit"><div><span>{valid.length} 款商品 · {quantity} 件</span><strong>{money(total)}</strong></div><button disabled={submitting || valid.length !== lines.length || catalog.orderAccess === "forbidden"}>{submitLabel}</button></footer>
+    </form> : <div className="public-empty"><ShoppingBag/><h2>还没有选择商品</h2><Link href={storeHref(catalog.store.slug, "category", refCode)}>去逛逛</Link></div>}
+  </main>;
 }

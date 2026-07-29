@@ -2,22 +2,23 @@ import { AuthorizationStatus, CustomerStatus, ProductSource, Role } from "@prism
 import { notFound } from "next/navigation";
 import { auth } from "@/customer-auth";
 import { db } from "@/lib/db";
-import { canAccessPublicStore, deploymentScope } from "@/lib/deployment-scope";
+import { canAccessPublicStore } from "@/lib/deployment-scope";
+import { resolveOrderAccess } from "@/lib/public-order-access";
 
 export async function getPublicStore(slug: string) {
   if (!canAccessPublicStore(slug)) notFound();
   const store = await db.store.findFirst({ where: { slug, isActive: true } });
   if (!store) notFound();
   const session = await auth();
-  const scope = deploymentScope();
-  if (scope.isPreview && session?.user && session.user.role !== Role.CUSTOMER) notFound();
-  const customerId = session?.user?.role === Role.CUSTOMER ? session.user.id : null;
+  const user = session?.user?.id ? await db.user.findFirst({ where: { id: session.user.id, isActive: true }, select: { id: true, role: true, storeId: true, customerStatus: true } }) : null;
+  const customerId = user?.role === Role.CUSTOMER ? user.id : null;
   const profile = customerId ? await db.customerProfile.findFirst({ where: { storeId: store.id, customerId, status: CustomerStatus.ACTIVE } }) : null;
-  if (scope.isPreview && customerId && !profile) notFound();
+  const customerActive = Boolean(profile) && user?.customerStatus === CustomerStatus.ACTIVE;
   return {
     store,
     customerId,
-    customerActive: Boolean(profile),
+    customerActive,
+    orderAccess: resolveOrderAccess(user ?? null, store.id, customerActive, Boolean(session?.user?.id)),
     customerProfile: profile ? { name: profile.name, phone: profile.phone } : null,
   };
 }

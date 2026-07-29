@@ -2,6 +2,10 @@ import type { PageConfigV4 } from "@/lib/page-config";
 
 const root = "/templates/liangchen";
 
+export function canApplyLiangchenHomeTemplate(page: { isHome: boolean }) {
+  return page.isHome;
+}
+
 export const LIANGCHEN_CONTENT_PAGES = [
   { title: "企业介绍", slug: "brand-story", images: [`${root}/content/brand-01.jpg`] },
   { title: "丞礼系列", slug: "product-intro", images: Array.from({ length: 5 }, (_, index) => `${root}/content/chengli-${String(index + 1).padStart(2, "0")}.jpg`) },

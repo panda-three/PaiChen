@@ -11,7 +11,7 @@ import { requireActor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { parsePageConfig, blankPageConfig, homeTemplateConfig, validatePageConfigForStore, type PageConfigV2 } from "@/lib/page-config";
 import { buildPageCopyData, publicPagePath } from "@/lib/page-management";
-import { LIANGCHEN_CONTENT_PAGES, liangchenContentPageConfig, liangchenHomeConfig, missingLiangchenContentPages } from "@/lib/liangchen-template";
+import { canApplyLiangchenHomeTemplate, LIANGCHEN_CONTENT_PAGES, liangchenContentPageConfig, liangchenHomeConfig, missingLiangchenContentPages } from "@/lib/liangchen-template";
 
 const value = (data: FormData, key: string) => String(data.get(key) ?? "").trim();
 const fail = (path: string, message: string): never => redirect(`${path}?error=${encodeURIComponent(message)}`);
@@ -244,8 +244,7 @@ export async function applyLiangchenHomeTemplate(data: FormData) {
   const page = await db.storePage.findFirst({ where: { id, storeId: storeId ?? "" }, include: { store: { select: { slug: true } } } });
   if (!page) fail("/admin/pages", "页面不存在");
   const activePage = page!;
-  if (activePage.store.slug !== "liangchen") fail(`/admin/pages/${id}`, "良丞首页模板只适用于 liangchen 店铺");
-  if (!activePage.isHome) fail(`/admin/pages/${id}`, "请在当前主页上应用良丞首页模板");
+  if (!canApplyLiangchenHomeTemplate(activePage)) fail(`/admin/pages/${id}`, "请在当前主页上应用良丞首页模板");
   const categories = await db.category.findMany({ where: { storeId: activePage.storeId, isActive: true }, orderBy: { sort: "asc" }, select: { id: true } });
   if (!categories.length) fail(`/admin/pages/${id}`, "请先创建至少一个有效商品分类");
   await db.$transaction(async (tx) => {
