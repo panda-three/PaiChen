@@ -15,7 +15,7 @@ import { defaultPublicStoreSlug,validatePreviewStoreSlug } from "../lib/server-e
 import { runtimeDatabaseUrl } from "../lib/db";
 import { canApplyLiangchenHomeTemplate, LIANGCHEN_CONTENT_PAGES, liangchenHomeConfig, missingLiangchenContentPages } from "../lib/liangchen-template";
 import { productNameWithCode, resolveProductGroup } from "../lib/product-group";
-import { scrollCarouselTo } from "../lib/carousel";
+import { carouselIndexFromPosition, nextCarouselIndex, scrollCarouselTo } from "../lib/carousel";
 
 describe("page config",()=>{
   it("upgrades V1 and strips executable rich text",()=>{const config=parsePageConfig({version:1,components:[{id:"a",type:"richText",html:'<p onclick="bad()">安全</p><script>alert(1)</script>'},{id:"p",type:"products",title:"商品",productIds:["p1"]}]});expect(config.version).toBe(4);expect(config.components.map(x=>x.type)).toEqual(["storeHeader","employeeCard","richText","productGrid"]);expect(config.components.find(x=>x.type==="richText")).toMatchObject({html:"<p>安全</p>"});expect(config.components.find(x=>x.type==="productGrid")).toMatchObject({source:{mode:"selected",productIds:["p1"]}})});
@@ -42,6 +42,16 @@ describe("liangchen template and product groups",()=>{
 });
 
 describe("public storefront state",()=>{
+  it("derives carousel state from numeric scroll snapshots",()=>{
+    expect(carouselIndexFromPosition(390,0)).toBe(0);
+    expect(carouselIndexFromPosition(390,389)).toBe(1);
+    expect(carouselIndexFromPosition(0,390)).toBeNull();
+  });
+  it("advances carousel pages and wraps the final page",()=>{
+    expect(nextCarouselIndex(0,3)).toBe(1);
+    expect(nextCarouselIndex(2,3)).toBe(0);
+    expect(nextCarouselIndex(0,1)).toBe(0);
+  });
   it("moves carousel controls in webviews without element.scrollTo",()=>{
     const legacyTrack={clientWidth:390,scrollLeft:0};
     expect(()=>scrollCarouselTo(legacyTrack,2)).not.toThrow();
