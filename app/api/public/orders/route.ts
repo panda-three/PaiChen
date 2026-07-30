@@ -43,8 +43,7 @@ export async function POST(request: Request) {
 
   const existing = await db.order.findUnique({ where: { idempotencyKey: input.clientRequestId } });
   if (existing) {
-    const employeeConflict = currentUser.role === Role.EMPLOYEE && (existing.sourceEmployeeId !== currentUser.id || existing.responsibleEmployeeId !== currentUser.id);
-    if (existing.storeId !== store.id || existing.customerId !== customerId || employeeConflict) {
+    if (existing.storeId !== store.id || existing.appSubmitterId !== currentUser.id) {
       return Response.json({ error: "重复请求标识冲突" }, { status: 409 });
     }
     return Response.json({ orderNo: existing.orderNo, storePhone: store.phone });
@@ -108,6 +107,7 @@ export async function POST(request: Request) {
         storeId: store.id,
         leadId: lead.id,
         customerId,
+        appSubmitterId: currentUser.id,
         sourceEmployeeId: sourceEmployee?.id ?? null,
         responsibleEmployeeId: sourceEmployee?.id ?? null,
         customerName,

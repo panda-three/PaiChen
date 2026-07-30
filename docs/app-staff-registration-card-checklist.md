@@ -173,7 +173,7 @@ limit 5;
 - [ ] T-005 `[RT]` 在无痕窗口打开邀请链接，页面显示正确店铺、角色“员工”和脱敏手机号，不提供角色或店铺选择。
 - [ ] T-006 `[RT]` 输入与邀请不同的手机号提交，页面明确拒绝；数据库仍为 `usedAt is null`，且没有创建用户。
 - [ ] T-007 `[BLOCK][RT]` 改为邀请手机号，填写姓名、未占用的独立登录账号和 8–72 位密码；注册成功后自动登录并进入 `/me`。
-- [ ] T-008 `[RT]` `/me` 显示店铺、员工角色、登录账号、名片预览和个人分享入口，不显示客户意向单。
+- [ ] T-008 `[RT]` `/me` 显示店铺、员工角色、登录账号、名片预览、个人分享入口和本人通过 APP 提交的“我的订单”。
 - [ ] T-009 `[AI]` `User` 新记录的 `role=EMPLOYEE`、`storeId` 正确、`shareCode` 非空且 `isActive=true`；邀请 `usedAt` 已写入。
 - [ ] T-010 `[AI]` `AuditLog` 存在邀请兑换记录，且 `afterJson` 中的用户和角色与新账号一致。
 
@@ -282,7 +282,7 @@ where "id" = '<本次专用 invitation id>'
 ### C3. 客户与前后台会话回归
 
 - [ ] T-045 `[BLOCK][RT]` 新客户仍可从店铺页面进入 `/login`，使用手机号注册并自动登录。
-- [ ] T-046 `[RT]` 客户 `/me` 仍显示店铺资料和意向单，不显示员工名片设置。
+- [ ] T-046 `[RT]` 客户 `/me` 显示店铺资料和本人通过 APP 提交的“我的订单”，不显示员工名片设置。
 - [ ] T-047 `[RT]` 现有员工账号无需邀请或重新注册，可直接通过 `/login` 使用独立账号登录 APP。
 - [ ] T-048 `[RT]` `PLATFORM_ADMIN` 和 `ENTERPRISE_ADMIN` 尝试 `/login` 均失败，仍只能使用 `/admin/login`。
 - [ ] T-049 `[BLOCK][RT]` 同一浏览器先登录 APP，再登录后台；刷新两边页面后两个账号均保持登录。
@@ -293,7 +293,7 @@ where "id" = '<本次专用 invitation id>'
 
 本次实现完成时已执行以下自动检查，但它们不能替代真实 Supabase 和浏览器验收：
 
-- [x] A-001 `npm test`：9 个测试文件、72 个测试通过。
+- [x] A-001 `npm test`：14 个测试文件、98 个测试通过。
 - [x] A-002 `npm run lint`：通过。
 - [x] A-003 `npx tsc --noEmit`：通过。
 - [x] A-004 `npm run build`：通过。
@@ -324,3 +324,101 @@ docs/app-staff-registration-card-bugs.md
 ```
 
 BUG 只记录复现事实、实际表现、预期行为、环境和时间，不在测试文档中直接推测原因或提出修复方案。
+
+## 11. APP 我的订单与员工微信二维码增量验收
+
+### 11.1 数据库迁移
+
+新增迁移：
+
+```text
+prisma/migrations/20260730000100_app_order_submitter_wechat_qr/migration.sql
+```
+
+仍使用受控顺序，且已有业务库禁止运行 `npm run db:push` 或 `npm run db:seed`：
+
+```bash
+npx prisma migrate status
+npm run db:deploy
+npx prisma migrate status
+```
+
+迁移回填边界：
+
+- 客户旧订单以非空 `customerId` 回填 `appSubmitterId`。
+- 员工旧订单必须同时具有 `sourceEmployeeId`，并存在 `sessionId = Order.idempotencyKey` 的 `ORDER_SUBMIT` 事件，才回填来源员工。
+- 无法证明提交人的旧店铺管理员订单保持为空。
+- 后台“快速开单”不写 `appSubmitterId`，因此不进入 APP“我的订单”。
+
+只读校验 SQL：
+
+```sql
+select column_name, data_type, is_nullable
+from information_schema.columns
+where table_schema = 'public'
+  and ((table_name = 'Order' and column_name = 'appSubmitterId')
+    or (table_name = 'User' and column_name = 'wechatQrUrl'))
+order by table_name, column_name;
+
+select indexname, indexdef
+from pg_indexes
+where schemaname = 'public'
+  and tablename = 'Order'
+  and indexname = 'Order_appSubmitterId_createdAt_idx';
+
+select conname, pg_get_constraintdef(oid)
+from pg_constraint
+where conname = 'Order_appSubmitterId_fkey';
+
+select count(*) as customer_backfill_missing
+from "Order"
+where "customerId" is not null and "appSubmitterId" is distinct from "customerId";
+
+select o."id", o."orderNo", o."sourceEmployeeId", o."appSubmitterId"
+from "Order" o
+where o."customerId" is null
+  and o."appSubmitterId" is not null
+  and not exists (
+    select 1 from "BehaviorEvent" e
+    where e."storeId" = o."storeId"
+      and e."sessionId" = o."idempotencyKey"
+      and e."type" = 'ORDER_SUBMIT'
+  );
+```
+
+- [ ] T-052 `[BLOCK][AI]` 迁移成功，两个新增字段、索引和外键存在。
+- [ ] T-053 `[AI]` `customer_backfill_missing = 0`，第二条异常明细查询返回 0 行。
+- [ ] T-054 `[AI]` 抽查旧管理员订单及后台快速订单，`appSubmitterId is null`。
+
+### 11.2 三角色“我的订单”
+
+客户、员工、店铺管理员必须使用三个独立 APP 账号，分别在 `/s/{slug}/cart` 提交订单；不要用后台负责人或来源员工权限代替账号归属验证。
+
+- [ ] T-055 `[BLOCK][RT]` 三种角色的 `/me` 均显示“我的订单”入口，点击后定位到当前页 `#orders`。
+- [ ] T-056 `[RT][AI]` 每种角色仅看到自己通过 APP 提交的订单；订单号、店铺、状态、商品摘要和时间正确。
+- [ ] T-057 `[RT]` 新账号没有本人 APP 订单时显示“暂无订单”。
+- [ ] T-058 `[BLOCK][RT]` 账号 A 的幂等请求标识不能被账号 B 复用，接口返回 409，且不创建第二张订单。
+- [ ] T-059 `[RT][AI]` 员工在后台“快速开单”后，后台订单存在，但该员工 APP“我的订单”数量不增加。
+- [ ] T-060 `[RT]` 店铺管理员不能在 APP 看到全店订单，只能看到本人提交订单。
+
+### 11.3 微信二维码 Storage 与账号设置
+
+员工和店铺管理员分别执行一次完整流程；客户设置页不应出现该员工二维码槽位。
+
+- [ ] T-061 `[RT]` 空状态显示“尚未上传微信二维码”，可选择 JPG、PNG、WebP，超过 5 MB 或其他类型被拒绝。
+- [ ] T-062 `[BLOCK][RT][AI]` 上传后页面立即预览，`User.wechatQrUrl` 指向 `customer-assets/{storeId}/{userId}/wechatQr-*`，并存在“APP 修改微信二维码”审计记录。
+- [ ] T-063 `[RT][AI]` 更换二维码后新对象存在、字段指向新 URL、旧 Storage 对象已删除。
+- [ ] T-064 `[RT][AI]` 删除二维码后回到空状态，字段为空、旧对象已删除，并存在“APP 删除微信二维码”审计记录。
+- [ ] T-065 `[RT]` 上传过程中若数据库保存失败，新上传对象被清理，原字段和原对象保持不变。
+- [ ] T-066 `[RT]` 员工 A 的对象路径不能使用员工 B 或其他店铺目录；未登录及非员工 APP 账号不能调用接口。
+- [ ] T-067 `[BLOCK][RT]` 带个人 `ref` 的分享名片仍只展示姓名、电话、微信号、职位、简介和头像，不展示微信二维码。
+- [ ] T-068 `[RT]` 未传 `type` 的旧版头像上传/删除请求仍按头像处理，不修改 `wechatQrUrl`。
+
+### 11.4 证据边界
+
+本地单元测试、lint、TypeScript 和构建通过，只能证明代码与静态契约；以下项目必须单独记录真实环境证据：
+
+- [ ] A-011 真实 Supabase 已按受控流程部署增量迁移，并完成上述只读 SQL。
+- [ ] A-012 真实 Supabase Storage 已验证二维码上传、替换失败回滚和删除。
+- [ ] A-013 客户、员工、店铺管理员的移动端浏览器订单隔离已完成。
+- [ ] A-014 分享名片在真实移动端确认不展示二维码。

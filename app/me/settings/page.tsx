@@ -13,7 +13,7 @@ import { StaffSettings } from "./staff-settings";
 export default async function CustomerSettingsPage({ searchParams }: { searchParams: Promise<{ store?: string; ref?: string }> }) {
   const query = await searchParams;
   const appUser = await getActiveAppUser();
-  if (appUser && (appUser.role === Role.EMPLOYEE || appUser.role === Role.STORE_ADMIN) && appUser.store) return <StaffSettings initialProfile={{ username:appUser.username, roleLabel:appUser.role===Role.STORE_ADMIN?"店铺管理员":"员工", storeName:appUser.store.name, storeSlug:appUser.store.slug, shareCode:appUser.shareCode??"", name:appUser.name, phone:appUser.phone??"", wechat:appUser.wechat??"", title:appUser.title??"", bio:appUser.bio??"", avatarUrl:appUser.avatarUrl }}/>;
+  if (appUser && (appUser.role === Role.EMPLOYEE || appUser.role === Role.STORE_ADMIN) && appUser.store) return <StaffSettings initialProfile={{ username:appUser.username, roleLabel:appUser.role===Role.STORE_ADMIN?"店铺管理员":"员工", storeName:appUser.store.name, storeSlug:appUser.store.slug, shareCode:appUser.shareCode??"", name:appUser.name, phone:appUser.phone??"", wechat:appUser.wechat??"", title:appUser.title??"", bio:appUser.bio??"", avatarUrl:appUser.avatarUrl, wechatQrUrl:appUser.wechatQrUrl }}/>;
   const actor = await getActiveCustomer();
   const returnParams = new URLSearchParams();
   if (query.store) returnParams.set("store", query.store);

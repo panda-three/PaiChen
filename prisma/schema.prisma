@@ -107,6 +107,7 @@ model User {
   title               String?
   bio                 String?
   avatarUrl           String?
+  wechatQrUrl         String?
   shareCode           String?               @unique
   isActive            Boolean               @default(true)
   customerStatus      CustomerStatus?
@@ -131,6 +132,7 @@ model User {
   events              BehaviorEvent[]
   favorites           Favorite[]
   customerOrders      Order[]               @relation("CustomerOrders")
+  appSubmittedOrders  Order[]               @relation("AppSubmitter")
   orderChanges        OrderChange[]
   customerSessions    CustomerSession[]
   createdInvitations  StaffInvitation[]     @relation("InvitationCreator")
@@ -216,7 +218,7 @@ model ProductVariant {
   code                String
   price               Decimal?
   referenceStock      Int?
-  imageUrl             String?
+  imageUrl            String?
   specification       String?
   sort                Int                @default(0)
   enterpriseVariantId String?
@@ -420,6 +422,8 @@ model Order {
   lead                  Lead          @relation(fields: [leadId], references: [id])
   customerId            String?
   customer              User?         @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: SetNull)
+  appSubmitterId        String?
+  appSubmitter          User?         @relation("AppSubmitter", fields: [appSubmitterId], references: [id], onDelete: SetNull)
   sourceEmployeeId      String?
   sourceEmployee        User?         @relation("SourceEmployee", fields: [sourceEmployeeId], references: [id], onDelete: SetNull)
   responsibleEmployeeId String?
@@ -433,6 +437,7 @@ model Order {
   @@index([storeId, status, createdAt])
   @@index([sourceEmployeeId, createdAt])
   @@index([responsibleEmployeeId, createdAt])
+  @@index([appSubmitterId, createdAt])
 }
 
 model OrderItem {

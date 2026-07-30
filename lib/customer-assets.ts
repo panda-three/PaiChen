@@ -6,12 +6,17 @@ export const CUSTOMER_ASSET_MAX_SIZE = 5 * 1024 * 1024;
 export const CUSTOMER_ASSET_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 export type CustomerAssetType = "avatar";
+export type StaffAssetType = "avatar" | "wechatQr";
 
 export function customerAssetType(value: FormDataEntryValue | null): CustomerAssetType | null {
   return value === "avatar" ? value : null;
 }
 
-export function customerAssetPath(storeId: string, customerId: string, type: CustomerAssetType, mimeType: string) {
+export function staffAssetType(value: FormDataEntryValue | null): StaffAssetType | null {
+  return value === "avatar" || value === "wechatQr" ? value : null;
+}
+
+export function customerAssetPath(storeId: string, customerId: string, type: CustomerAssetType | StaffAssetType, mimeType: string) {
   const extension = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
   return `${storeId}/${customerId}/${type}-${randomUUID()}.${extension}`;
 }

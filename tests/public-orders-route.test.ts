@@ -71,7 +71,7 @@ describe("public order route", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.db.user.findFirst).toHaveBeenCalledTimes(1);
-    expect(mocks.tx.order.create.mock.calls[0][0].data).toMatchObject({ customerId: null, sourceEmployeeId: employee.id, responsibleEmployeeId: employee.id, customerName: "代客姓名", customerPhone: "13800000000" });
+    expect(mocks.tx.order.create.mock.calls[0][0].data).toMatchObject({ customerId: null, appSubmitterId: employee.id, sourceEmployeeId: employee.id, responsibleEmployeeId: employee.id, customerName: "代客姓名", customerPhone: "13800000000" });
     expect(mocks.tx.lead.upsert.mock.calls[0][0].create.latestEmployeeId).toBe(employee.id);
   });
 
@@ -83,7 +83,7 @@ describe("public order route", () => {
     const response = await POST(request());
 
     expect(response.status).toBe(200);
-    expect(mocks.tx.order.create.mock.calls[0][0].data).toMatchObject({ customerId: null, sourceEmployeeId: null, responsibleEmployeeId: null });
+    expect(mocks.tx.order.create.mock.calls[0][0].data).toMatchObject({ customerId: null, appSubmitterId: admin.id, sourceEmployeeId: null, responsibleEmployeeId: null });
     expect(mocks.tx.lead.upsert.mock.calls[0][0].create.latestEmployeeId).toBeUndefined();
   });
 
@@ -97,7 +97,7 @@ describe("public order route", () => {
     const response = await POST(request());
 
     expect(response.status).toBe(200);
-    expect(mocks.tx.order.create.mock.calls[0][0].data).toMatchObject({ customerId: customer.id, sourceEmployeeId: source.id, responsibleEmployeeId: source.id, customerName: "客户本人", customerPhone: "13900000000" });
+    expect(mocks.tx.order.create.mock.calls[0][0].data).toMatchObject({ customerId: customer.id, appSubmitterId: customer.id, sourceEmployeeId: source.id, responsibleEmployeeId: source.id, customerName: "客户本人", customerPhone: "13900000000" });
     expect(mocks.tx.customerAttribution.create).toHaveBeenCalledOnce();
   });
 
@@ -116,12 +116,24 @@ describe("public order route", () => {
     const employee = actor(Role.EMPLOYEE);
     mocks.auth.mockResolvedValue({ user: { id: employee.id, role: employee.role, storeId: employee.storeId } });
     mocks.db.user.findFirst.mockResolvedValue(employee);
-    mocks.db.order.findUnique.mockResolvedValue({ orderNo: "YC-existing", storeId: store.id, customerId: null, sourceEmployeeId: employee.id, responsibleEmployeeId: employee.id });
+    mocks.db.order.findUnique.mockResolvedValue({ orderNo: "YC-existing", storeId: store.id, customerId: null, appSubmitterId: employee.id, sourceEmployeeId: employee.id, responsibleEmployeeId: employee.id });
 
     const response = await POST(request());
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ orderNo: "YC-existing" });
+    expect(mocks.db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects an idempotency key owned by another APP account", async () => {
+    const admin = actor(Role.STORE_ADMIN);
+    mocks.auth.mockResolvedValue({ user: { id: admin.id, role: admin.role, storeId: admin.storeId } });
+    mocks.db.user.findFirst.mockResolvedValue(admin);
+    mocks.db.order.findUnique.mockResolvedValue({ orderNo: "YC-existing", storeId: store.id, customerId: null, appSubmitterId: "other-user" });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(409);
     expect(mocks.db.$transaction).not.toHaveBeenCalled();
   });
 });
