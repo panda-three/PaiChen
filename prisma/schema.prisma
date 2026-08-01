@@ -163,16 +163,21 @@ model StaffInvitation {
 model Category {
   id        String    @id @default(cuid())
   name      String
+  alias     String?
   sort      Int       @default(0)
   isActive  Boolean   @default(true)
   storeId   String
   store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Category? @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children  Category[] @relation("CategoryTree")
   products  Product[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  @@unique([storeId, name])
   @@index([storeId, sort])
+  @@index([storeId, parentId, sort, createdAt])
+  @@index([parentId])
 }
 
 model Product {

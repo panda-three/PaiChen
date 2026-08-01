@@ -114,7 +114,8 @@ export async function saveStoreProfile(data: FormData) {
   if (!parsed.success) fail("/admin/store", fieldError(parsed.error));
   const cardWechat = cardWechatSchema.safeParse(text(data,"cardWechat"));
   if (!cardWechat.success) fail("/admin/store", fieldError(cardWechat.error));
-  const defaultCardJson = JSON.stringify({ name: text(data,"cardName") || parsed.data.name, phone: text(data,"cardPhone") || parsed.data.phone, wechat: cardWechat.data, title: text(data,"cardTitle") || "店铺顾问", bio: text(data,"cardBio") || parsed.data.address, avatarUrl: text(data,"cardAvatarUrl") || parsed.data.logoUrl || null, shareCode: null });
+  let currentCard: Record<string, unknown> = {}; try { currentCard = JSON.parse(actor.store!.defaultCardJson); } catch {}
+  const defaultCardJson = JSON.stringify({ name: text(data,"cardName") || parsed.data.name, phone: text(data,"cardPhone") || parsed.data.phone, wechat: cardWechat.data, wechatQrUrl: typeof currentCard.wechatQrUrl === "string" ? currentCard.wechatQrUrl : null, title: text(data,"cardTitle") || "店铺顾问", bio: text(data,"cardBio") || parsed.data.address, avatarUrl: text(data,"cardAvatarUrl") || parsed.data.logoUrl || null, shareCode: null });
   await db.store.update({ where: { id: actor.storeId! }, data: { ...parsed.data, logoUrl: parsed.data.logoUrl || null, defaultCardJson } });
   revalidatePath("/admin/store"); revalidatePath(`/s/${actor.store!.slug}`);
 }
@@ -186,15 +187,22 @@ export async function saveCategory(data: FormData) {
   const actor = await requireActor([Role.STORE_ADMIN]);
   const storeId = actor.storeId!;
   const name = text(data, "name");
+  const alias = text(data, "alias") || null;
   const sort = Number(text(data, "sort") || 0);
   if (!name) fail("/admin/categories", "请填写分类名称");
   const id = text(data, "id");
+  const parentId = text(data, "parentId") || null;
+  if (parentId) {
+    const parent = await db.category.findFirst({ where: { id: parentId, storeId, parentId: null } });
+    if (!parent) fail("/admin/categories", "父分类不存在、属于其他店铺或不是一级分类");
+  }
   if (id) {
     const found = await db.category.findFirst({ where: { id, storeId } });
     if (!found) fail("/admin/categories", "分类不存在");
-    await db.category.update({ where: { id }, data: { name, sort } }).catch(() => fail("/admin/categories", "分类名称已存在"));
+    if (found.parentId !== parentId) fail("/admin/categories", "分类创建后不能移动层级或更换父分类");
+    await db.category.update({ where: { id }, data: { name, alias, sort } }).catch(() => fail("/admin/categories", "同层级分类名称已存在"));
   } else {
-    await db.category.create({ data: { name, sort, storeId } }).catch(() => fail("/admin/categories", "分类名称已存在"));
+    await db.category.create({ data: { name, alias, sort, storeId, parentId } }).catch(() => fail("/admin/categories", "同层级分类名称已存在"));
   }
   revalidatePath("/admin/categories");
 }
@@ -208,9 +216,10 @@ export async function toggleCategory(data: FormData) {
 
 export async function deleteCategory(data: FormData) {
   const actor = await requireActor([Role.STORE_ADMIN]);
-  const found = await db.category.findFirst({ where: { id: text(data, "id"), storeId: actor.storeId! }, include: { _count: { select: { products: true } } } });
+  const found = await db.category.findFirst({ where: { id: text(data, "id"), storeId: actor.storeId! }, include: { _count: { select: { products: true, children: true } } } });
   if (!found) return;
   if (found._count.products) fail("/admin/categories", "分类下仍有商品，请先移动商品或停用分类");
+  if (found._count.children) fail("/admin/categories", "一级分类下仍有二级分类，不能删除");
   await db.category.delete({ where: { id: found.id } });
   revalidatePath("/admin/categories");
 }
@@ -228,8 +237,8 @@ export async function saveProduct(data: FormData) {
   const path = "/admin/products";
   const parsed = productSchema.safeParse({ name: text(data, "name"), code: text(data, "code"), categoryId: text(data, "categoryId"), mainImageUrl: text(data, "mainImageUrl"), detailImageUrls: text(data, "detailImageUrls"), specification: text(data, "specification"), price: text(data, "price"), referenceStock: text(data, "referenceStock"), unit: text(data, "unit"), description: text(data, "description"), sort: text(data, "sort") || "0" });
   if (!parsed.success) fail(path, fieldError(parsed.error));
-  const category = await db.category.findFirst({ where: { id: parsed.data.categoryId, storeId } });
-  if (!category) fail(path, "所选分类不存在");
+  const category = await db.category.findFirst({ where: { id: parsed.data.categoryId, storeId, parentId: { not: null }, isActive: true, parent: { isActive: true } } });
+  if (!category) fail(path, "商品只能归入已启用一级分类下的有效二级分类");
   const values = { ...parsed.data, price: parsed.data.price === "" ? null : parsed.data.price, referenceStock: parsed.data.referenceStock === "" ? null : parsed.data.referenceStock };
   const id = text(data, "id");
   if (id) {
@@ -247,9 +256,9 @@ export async function toggleProduct(data: FormData) {
   const actor = await requireActor([Role.STORE_ADMIN, Role.PLATFORM_ADMIN]);
   const storeId = await getCatalogStore(actor);
   if (!storeId) fail("/admin/products", "请先选择代运营店铺");
-  const product = await db.product.findFirst({ where: { id: text(data, "id"), storeId, isDeleted: false }, include: { category: true, authorization: true, store: true } });
+  const product = await db.product.findFirst({ where: { id: text(data, "id"), storeId, isDeleted: false }, include: { category: { include: { parent: true } }, authorization: true, store: true } });
   if (!product) return;
-  if (!product.isPublished && (!product.category?.isActive || (product.source === "ENTERPRISE" && product.authorization?.status !== "ACTIVE"))) fail("/admin/products", "商品未分类、分类已停用或企业授权已失效，不能上架");
+  if (!product.isPublished && (!product.category?.parentId || !product.category.isActive || !product.category.parent?.isActive || (product.source === "ENTERPRISE" && product.authorization?.status !== "ACTIVE"))) fail("/admin/products", "商品必须属于已启用一级分类下的已启用二级分类，且企业授权有效，才能上架");
   const updated = await db.product.update({ where: { id: product.id }, data: { isPublished: !product.isPublished } });
   await audit({ actorId: actor.id, storeId, action: updated.isPublished ? "商品上架" : "商品下架", entityType: "Product", entityId: product.id, before: { isPublished: product.isPublished }, after: { isPublished: updated.isPublished } });
   revalidatePath("/admin/products"); revalidatePath(`/s/${product.store.slug}`);

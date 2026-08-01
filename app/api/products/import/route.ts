@@ -4,7 +4,7 @@ import { ProductSource, Role } from "@prisma/client";
 import { getActiveActor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { BusinessProduct, EmbeddedImage, ImportError, parseBusinessWorkbook, stableVariantCode } from "@/lib/product-image-import";
-import { groupImportRows, ImportRow, V2_HEADERS } from "@/lib/product-import";
+import { groupImportRows, importCategoryLookup, ImportRow, V2_HEADERS } from "@/lib/product-import";
 import { isStoreImportPath, PRODUCT_IMAGES_BUCKET, PRODUCT_IMPORTS_BUCKET, productStorage } from "@/lib/product-storage";
 
 export const runtime = "nodejs";
@@ -97,8 +97,8 @@ async function importUrlWorkbook(buffer: Buffer, storeId: string): Promise<Resul
     db.category.findMany({ where: { storeId } }),
     db.product.findMany({ where: { storeId }, select: { code: true } }),
   ]);
-  const result = groupImportRows(rows, new Set(existing.map((item) => item.code)), new Set(categories.map((item) => item.name)));
-  const categoryMap = new Map(categories.map((item) => [item.name, item.id]));
+  const categoryMap = importCategoryLookup(categories);
+  const result = groupImportRows(rows, new Set(existing.map((item) => item.code)), new Set(categoryMap.keys()));
   const errors: ImportError[] = result.errors.map((error) => ({ row: error.row, code: "VALIDATION_ERROR", reason: error.reason }));
   let success = 0;
   for (const product of result.products) {

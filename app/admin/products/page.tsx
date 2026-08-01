@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Role } from "@prisma/client";
+import { Prisma, Role } from "@prisma/client";
 import { FileSpreadsheet, Pencil, Power } from "lucide-react";
 import { getCatalogStore, requireActor } from "@/lib/authz";
 import { db } from "@/lib/db";
@@ -16,17 +16,21 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const storeId = await getCatalogStore(actor);
   if (!storeId) return <><PageHeader title="商品代运营" description="请先从店铺管理进入代运营模式"/><Link className="btn" href="/admin/stores">选择店铺</Link></>;
   const query = await searchParams;
-  const where = {
+  const where: Prisma.ProductWhereInput = {
     storeId, isDeleted: false,
-    ...(query.q ? { OR: [{ name: { contains: query.q } }, { code: { contains: query.q } }, { variants: { some: { OR: [{ name: { contains: query.q } }, { code: { contains: query.q } }, { specification: { contains: query.q } }] } } }] } : {}),
-    ...(query.category === "uncategorized" ? { categoryId: null } : query.category ? { categoryId: query.category } : {}),
+    AND: [
+      ...(query.q ? [{ OR: [{ name: { contains: query.q } }, { code: { contains: query.q } }, { variants: { some: { OR: [{ name: { contains: query.q } }, { code: { contains: query.q } }, { specification: { contains: query.q } }] } } }] }] : []),
+      ...(query.category === "uncategorized" ? [{ categoryId: null }] : query.category ? [{ OR: [{ categoryId: query.category }, { category: { parentId: query.category } }] }] : []),
+    ],
     ...(query.status === "published" ? { isPublished: true } : query.status === "draft" ? { isPublished: false } : {}),
   };
   const [products, categories, editing] = await Promise.all([
     db.product.findMany({ where, include: { category: true, variants: true }, orderBy: [{ sort: "asc" }, { createdAt: "desc" }] }),
-    db.category.findMany({ where: { storeId }, orderBy: { sort: "asc" } }),
+    db.category.findMany({ where: { storeId }, orderBy: [{ parentId: "asc" }, { sort: "asc" }, { createdAt: "asc" }] }),
     query.edit ? db.product.findFirst({ where: { id: query.edit, storeId } }) : null,
   ]);
+  const roots = categories.filter((category) => !category.parentId);
+  const childOptions = (activeOnly = false) => roots.map((root) => <optgroup label={root.name} key={root.id}>{categories.filter((category) => category.parentId === root.id && (!activeOnly || (category.isActive && root.isActive))).map((category) => <option key={category.id} value={category.id}>{category.name}{category.isActive && root.isActive ? "" : "（已停用）"}</option>)}</optgroup>);
   return <>
     <PageHeader title="商品管理" description="只有已上架且分类启用的商品会出现在 H5" actions={<Link className="btn" href="/admin/products/import"><FileSpreadsheet size={16} />Excel 导入</Link>} />
     <FormError message={query.error} />
@@ -37,7 +41,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         <div className="form-grid">
           <label className="label">商品名称<input className="field" name="name" required defaultValue={editing?.name} /></label>
           <label className="label">商品编码<input className="field" name="code" required defaultValue={editing?.code} /></label>
-          <label className="label">所属分类<select className="field" name="categoryId" required defaultValue={editing?.categoryId ?? ""}><option value="">请选择分类</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.isActive ? "" : "（已停用）"}</option>)}</select></label>
+          <label className="label">所属二级分类<select className="field" name="categoryId" required defaultValue={editing?.categoryId ?? ""}><option value="">请选择二级分类</option>{childOptions()}</select></label>
           <label className="label">规格/型号<input className="field" name="specification" required defaultValue={editing?.specification} /></label>
           <label className="label">参考价格<input className="field" name="price" type="number" min="0" step="0.01" defaultValue={editing?.price?.toString() ?? ""} placeholder="留空表示面议" /></label>
           <label className="label">参考库存<input className="field" name="referenceStock" type="number" min="0" defaultValue={editing?.referenceStock ?? ""} placeholder="仅供参考，不扣减" /></label>
@@ -53,14 +57,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     </details>
     <form className="panel mb-5 grid gap-3 p-4 md:grid-cols-[1fr_220px_160px_auto]">
       <input className="field" name="q" defaultValue={query.q} placeholder="搜索名称、型号或规格" />
-      <select className="field" name="category" defaultValue={query.category}><option value="">全部分类</option><option value="uncategorized">未分类</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+      <select className="field" name="category" defaultValue={query.category}><option value="">全部分类</option><option value="uncategorized">未分类</option>{roots.map((root) => <optgroup label={root.name} key={root.id}><option value={root.id}>{root.name}（全部二级）</option>{categories.filter((category) => category.parentId === root.id).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</optgroup>)}</select>
       <select className="field" name="status" defaultValue={query.status}><option value="">全部状态</option><option value="published">已上架</option><option value="draft">已下架</option></select>
       <button className="btn btn-primary">筛选</button>
     </form>
     {actor.role === Role.STORE_ADMIN && <form id="bulk-product-form" action={bulkProducts} className="panel mb-3 flex flex-wrap items-center gap-3 p-3">
       <ProductSelectAll count={products.length} />
       <input type="hidden" name="operation" value="category" />
-      <select className="field max-w-64" name="categoryId" required defaultValue=""><option value="">选择启用分类</option>{categories.filter((category) => category.isActive).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+      <select className="field max-w-64" name="categoryId" required defaultValue=""><option value="">选择启用的二级分类</option>{childOptions(true)}</select>
       <button className="btn btn-primary">批量分配分类</button>
     </form>}
     <section className="panel table-wrap"><table><thead><tr>{actor.role === Role.STORE_ADMIN && <th aria-label="选择商品" className="w-10"/>}<th>商品</th><th>来源/编码</th><th>分类</th><th>规格</th><th>参考价格/库存</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>{products.map((product) => <tr key={product.id}>{actor.role === Role.STORE_ADMIN && <td><input data-product-selection form="bulk-product-form" type="checkbox" name="ids" value={product.id} aria-label={`选择${product.name}`} /></td>}<td><div className="flex min-w-56 items-center gap-3"><img src={product.mainImageUrl} alt="" className="size-12 rounded object-cover" /><strong>{product.name}</strong></div></td><td><span className="badge badge-off">{product.source}</span><div className="mt-1">{product.code}</div></td><td>{product.category?.name ?? "未分类"}</td><td>{product.variants.map(v=>[v.name,v.specification].filter(Boolean).join(" · ")).join("、") || product.specification}</td><td>{formatPrice(product.price)}<div className="muted text-xs">库存 {product.referenceStock ?? "未设"}</div></td><td>{product.sort}</td><td><span className={`badge ${product.isPublished ? "" : "badge-off"}`}>{product.isPublished ? "已上架" : "已下架"}</span></td><td><div className="actions"><Link className="btn min-h-8 px-2 text-xs" href={`/admin/products?edit=${product.id}`}><Pencil size={14} />编辑</Link><form action={toggleProduct}><input type="hidden" name="id" value={product.id} /><button className="btn min-h-8 px-2 text-xs"><Power size={14} />{product.isPublished ? "下架" : "上架"}</button></form></div></td></tr>)}</tbody></table>{!products.length && <div className="empty">没有符合条件的商品。</div>}</section>

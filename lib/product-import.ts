@@ -2,6 +2,15 @@ export type ImportRow={row:number;name:string;code:string;categoryName:string;ma
 export type ImportProduct={name:string;code:string;categoryName:string;mainImageUrl:string;detailImageUrls:string;unit:string;description:string;sort:number;variants:{name:string;code:string;price:number|null;stock:number|null}[]};
 export const V2_HEADERS=["模板版本*","商品名称*","商品编码*","分类名称*","主图URL*","详情图URL","规格名称*","规格编码*","规格参考价","规格参考库存","单位","商品描述","排序"];
 
+export function importCategoryLookup(categories: Array<{ id: string; name: string; parentId: string | null; isActive: boolean }>) {
+  const roots = new Map(categories.filter((item) => !item.parentId && item.isActive).map((item) => [item.id, item]));
+  const children = categories.filter((item) => item.parentId && item.isActive && roots.has(item.parentId));
+  const nameCounts = new Map<string, number>(); for (const item of children) nameCounts.set(item.name, (nameCounts.get(item.name) ?? 0) + 1);
+  const lookup = new Map<string, string>();
+  for (const item of children) { const parent = roots.get(item.parentId!); if (parent) lookup.set(`${parent.name}/${item.name}`, item.id); if (nameCounts.get(item.name) === 1) lookup.set(item.name, item.id); }
+  return lookup;
+}
+
 const url=/^https?:\/\/\S+$/i;
 export function groupImportRows(rows:ImportRow[],existingCodes:Set<string>,categories:Set<string>){
   const errors:{row:number;reason:string}[]=[];const groups=new Map<string,ImportProduct>();const variantCodes=new Set<string>();const invalidCodes=new Set<string>();

@@ -7,6 +7,7 @@ export const CUSTOMER_ASSET_MIME_TYPES = ["image/jpeg", "image/png", "image/webp
 
 export type CustomerAssetType = "avatar";
 export type StaffAssetType = "avatar" | "wechatQr";
+export type StoreAssetType = "defaultCardWechatQr";
 
 export function customerAssetType(value: FormDataEntryValue | null): CustomerAssetType | null {
   return value === "avatar" ? value : null;
@@ -16,7 +17,7 @@ export function staffAssetType(value: FormDataEntryValue | null): StaffAssetType
   return value === "avatar" || value === "wechatQr" ? value : null;
 }
 
-export function customerAssetPath(storeId: string, customerId: string, type: CustomerAssetType | StaffAssetType, mimeType: string) {
+export function customerAssetPath(storeId: string, customerId: string, type: CustomerAssetType | StaffAssetType | StoreAssetType, mimeType: string) {
   const extension = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
   return `${storeId}/${customerId}/${type}-${randomUUID()}.${extension}`;
 }

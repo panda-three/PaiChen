@@ -19,8 +19,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const session = await auth();
   if (session?.user?.role === Role.CUSTOMER || session?.user?.role === Role.EMPLOYEE || session?.user?.role === Role.STORE_ADMIN) redirect(returnTo);
   const staffInvitation = query.mode === "staff-register" && query.invite ? await previewStaffInvitation(query.invite) : null;
-  if (query.mode === "staff-register") return <AuthShell eyebrow="TEAM ACCESS" title="受邀注册" description="店铺和角色已由邀请绑定，登录账号需与客户手机号账号保持独立。"><AuthEndpointProvider basePath={CUSTOMER_AUTH_BASE_PATH}>{staffInvitation ? <StaffRegistration invite={query.invite ?? ""} storeName={staffInvitation.storeName} role={staffRoleLabel(staffInvitation.role)} maskedPhone={staffInvitation.phone} unavailable={staffInvitation.unavailable}/> : <p className="auth-feedback auth-feedback-error">邀请不存在或链接不完整</p>}</AuthEndpointProvider></AuthShell>;
-  return <AuthShell eyebrow="APP ACCESS" title="APP 账号" description="客户使用手机号登录；员工和店铺管理员使用独立登录账号。">
+  if (query.mode === "staff-register") return <AuthShell app eyebrow="TEAM ACCESS" title="受邀注册" description="店铺和角色已由邀请绑定，登录账号需与客户手机号账号保持独立。"><AuthEndpointProvider basePath={CUSTOMER_AUTH_BASE_PATH}>{staffInvitation ? <StaffRegistration invite={query.invite ?? ""} storeName={staffInvitation.storeName} role={staffRoleLabel(staffInvitation.role)} maskedPhone={staffInvitation.phone} unavailable={staffInvitation.unavailable}/> : <p className="auth-feedback auth-feedback-error">邀请不存在或链接不完整</p>}</AuthEndpointProvider></AuthShell>;
+  return <AuthShell app eyebrow="APP ACCESS" title="APP 账号" description="客户使用手机号登录；员工和店铺管理员使用独立登录账号。">
     <AuthEndpointProvider basePath={CUSTOMER_AUTH_BASE_PATH}>
       <CustomerAccess storeSlug={query.store ?? ""} refCode={query.ref ?? ""} initialMode={query.mode ?? "login"} returnTo={returnTo}/>
     </AuthEndpointProvider>

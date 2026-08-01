@@ -33,10 +33,11 @@ describe("customer settings validation", () => {
   });
 
   it("uses only administrator or employee ref cards", () => {
-    const fallback={name:"默认名片",phone:"400",wechat:null,title:"顾问",bio:"默认简介",avatarUrl:null};
-    const employee={name:"员工",phone:"13800000000",wechat:"wx-demo",title:"空间顾问",bio:"全屋选品",avatarUrl:null,role:Role.EMPLOYEE};
+    const fallback={name:"默认名片",phone:"400",wechat:"store-wx",wechatQrUrl:"/store-qr.png",title:"顾问",bio:"默认简介",avatarUrl:null};
+    const employee={name:"员工",phone:"13800000000",wechat:"wx-demo",wechatQrUrl:"/staff-qr.png",title:"空间顾问",bio:"全屋选品",avatarUrl:null,role:Role.EMPLOYEE};
     expect(resolveHomeCard(fallback,employee)).toMatchObject({name:"员工",wechat:"wx-demo"});
     expect(resolveHomeCard(fallback,{...employee,name:"管理员",role:Role.STORE_ADMIN})).toMatchObject({name:"管理员"});
+    expect(resolveHomeCard(fallback,{...employee,wechatQrUrl:null})).toBe(fallback);
     expect(resolveHomeCard(fallback,{...employee,name:"客户",role:Role.CUSTOMER})).toBe(fallback);
     expect(resolveHomeCard(fallback,null)).toBe(fallback);
   });

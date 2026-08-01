@@ -315,11 +315,11 @@ export async function bulkProducts(data: FormData) {
   const storeId = actor.storeId!;
   const ids = [...new Set(data.getAll("ids").map(String).flatMap((item) => item.split(",")).filter(Boolean))]; const action = value(data, "operation"); const categoryId = value(data, "categoryId") || null;
   if (!ids.length) fail("/admin/products", "请选择商品");
-  if (action === "publish") await db.product.updateMany({ where: { id: { in: ids }, storeId, isDeleted: false, categoryId: { not: null } }, data: { isPublished: true } });
+  if (action === "publish") await db.product.updateMany({ where: { id: { in: ids }, storeId, isDeleted: false, category: { parentId: { not: null }, isActive: true, parent: { isActive: true } } }, data: { isPublished: true } });
   else if (action === "unpublish") await db.product.updateMany({ where: { id: { in: ids }, storeId }, data: { isPublished: false } });
   else if (action === "delete") await db.product.updateMany({ where: { id: { in: ids }, storeId, source: { not: ProductSource.ENTERPRISE } }, data: { isPublished: false, isDeleted: true } });
   else if (action === "category") {
-    if (!categoryId || !await db.category.findFirst({ where: { id: categoryId, storeId, isActive: true } })) fail("/admin/products", "所选分类不可用");
+    if (!categoryId || !await db.category.findFirst({ where: { id: categoryId, storeId, parentId: { not: null }, isActive: true, parent: { isActive: true } } })) fail("/admin/products", "只能分配到已启用一级分类下的二级分类");
     await db.product.updateMany({ where: { id: { in: ids }, storeId, isDeleted: false }, data: { categoryId, isPublished: false } });
   }
   revalidatePath("/admin/products");

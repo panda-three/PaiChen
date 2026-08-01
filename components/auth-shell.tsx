@@ -1,13 +1,14 @@
 import { Store } from "lucide-react";
 
-export function AuthShell({ eyebrow, title, description, children, footer }: {
+export function AuthShell({ eyebrow, title, description, children, footer, app = false }: {
   eyebrow: string;
   title: string;
   description: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  app?: boolean;
 }) {
-  return <main className="auth-page">
+  return <main className={`auth-page ${app ? "auth-page-app" : ""}`}>
     <section className="auth-shell">
       <div className="auth-visual" role="img" aria-label="现代意式客厅空间">
         <div className="auth-brand"><span><Store size={18} aria-hidden="true" /></span><strong>YUNCHENG</strong></div>

@@ -26,8 +26,8 @@ export async function getPublicStore(slug: string) {
 export async function getPublicCatalog(slug: string) {
   const context = await getPublicStore(slug);
   const [categories, products] = await Promise.all([
-    db.category.findMany({ where: { storeId: context.store.id, isActive: true }, orderBy: { sort: "asc" }, select: { id: true, name: true } }),
-    db.product.findMany({ where: { storeId: context.store.id, isPublished: true, isDeleted: false, category: { isActive: true }, OR: [{ source: { not: ProductSource.ENTERPRISE } }, { authorization: { status: AuthorizationStatus.ACTIVE } }] }, include: { variants: { orderBy: { sort: "asc" } }, category: { select: { name: true } } }, orderBy: [{ sort: "asc" }, { createdAt: "desc" }] }),
+    db.category.findMany({ where: { storeId: context.store.id, isActive: true, OR: [{ parentId: null }, { parent: { isActive: true } }] }, orderBy: [{ parentId: "asc" }, { sort: "asc" }, { createdAt: "asc" }], select: { id: true, name: true, parentId: true } }),
+    db.product.findMany({ where: { storeId: context.store.id, isPublished: true, isDeleted: false, category: { isActive: true, OR: [{ parentId: null }, { parent: { isActive: true } }] }, OR: [{ source: { not: ProductSource.ENTERPRISE } }, { authorization: { status: AuthorizationStatus.ACTIVE } }] }, include: { variants: { orderBy: { sort: "asc" } }, category: { select: { name: true, parentId: true } } }, orderBy: [{ sort: "asc" }, { createdAt: "desc" }] }),
   ]);
   return { ...context, categories, products: products.map((product) => ({ ...product, price: product.price?.toString() ?? null, variants: product.variants.map((variant) => ({ ...variant, price: variant.price?.toString() ?? null })) })) };
 }

@@ -57,7 +57,7 @@ const labels: Record<PageComponentV2["type"], string> = {
 };
 const types = Object.keys(labels) as PageComponentV2["type"][];
 
-type Category = { id: string; name: string; productCount: number; createdAt: string };
+type Category = { id: string; name: string; parentId: string | null; productCount: number; createdAt: string };
 type PageLink = { id: string; title: string; slug: string; published: boolean };
 type Props = {
   page: { id: string; title: string; slug: string; config: PageConfigV2; published: boolean; isHome: boolean };
@@ -299,7 +299,7 @@ export function PageEditor({ page, publicUrl, store, employee, products, categor
       <div className="grid items-start gap-5 xl:grid-cols-[200px_410px_minmax(280px,1fr)] 2xl:grid-cols-[220px_430px_minmax(320px,1fr)]">
         <aside className="panel p-4 xl:sticky xl:top-5"><h2 className="font-bold">组件</h2><p className="muted mb-3 mt-1 text-xs">点击追加，或拖入中间画布</p><div className="grid gap-2">{types.map((type) => <PaletteItem key={type} type={type} onAdd={() => add(type)}/>)}</div></aside>
         <section><div className="mb-3 flex items-center justify-between"><div><h2 className="font-bold">页面画布</h2><p className="muted mt-1 text-xs">拖动组件调整页面顺序</p></div><span className="badge">{components.length} 个组件</span></div>
-          <PhoneCanvas empty={!components.length}><PublicCartProvider slug={store.slug}><SortableContext items={components.map((item) => item.id)} strategy={verticalListSortingStrategy}><PublicHome catalog={{store,categories,products,customerActive:false}} config={{ version: 4, themeColor, components }} employee={employee ?? {name:store.name,phone:store.phone,wechat:null,title:null,bio:store.address,avatarUrl:store.logoUrl}} currentPageId={page.id} favoriteIds={[]} pages={pages} heroAutoplay={false} renderComponent={(component, content) => <SortableCanvasItem key={component.id} component={component} selected={selectedId === component.id} onSelect={() => setSelectedId(component.id)} onRemove={() => remove(component.id)}>{content}</SortableCanvasItem>}/></SortableContext></PublicCartProvider></PhoneCanvas>
+          <PhoneCanvas empty={!components.length}><PublicCartProvider slug={store.slug}><SortableContext items={components.map((item) => item.id)} strategy={verticalListSortingStrategy}><PublicHome catalog={{store,categories,products,customerActive:false}} config={{ version: 4, themeColor, components }} employee={employee ?? {name:store.name,phone:store.phone,wechat:null,wechatQrUrl:null,title:null,bio:store.address,avatarUrl:store.logoUrl}} currentPageId={page.id} favoriteIds={[]} pages={pages} heroAutoplay={false} renderComponent={(component, content) => <SortableCanvasItem key={component.id} component={component} selected={selectedId === component.id} onSelect={() => setSelectedId(component.id)} onRemove={() => remove(component.id)}>{content}</SortableCanvasItem>}/></SortableContext></PublicCartProvider></PhoneCanvas>
         </section>
         <aside className="panel p-4 xl:sticky xl:top-5"><h2 className="mb-4 font-bold">属性</h2><Properties/></aside>
       </div>

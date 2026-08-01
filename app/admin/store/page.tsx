@@ -4,6 +4,7 @@ import Link from "next/link";
 import { requireActor } from "@/lib/authz";
 import { PageHeader, FormError } from "@/components/page-header";
 import { saveStoreProfile } from "../actions";
+import { DefaultCardQr } from "./default-card-qr";
 
 export default async function StoreProfilePage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const actor = await requireActor([Role.STORE_ADMIN]);
@@ -24,5 +25,6 @@ export default async function StoreProfilePage({ searchParams }: { searchParams:
       {store.logoUrl && <div className="mt-5"><p className="label mb-2">当前图片</p><img src={store.logoUrl} alt="店铺 Logo" className="h-32 w-52 rounded object-cover" /></div>}
       <button className="btn btn-primary mt-6">保存资料</button>
     </form>
+    <div className="panel mt-5 max-w-4xl p-6"><DefaultCardQr initialUrl={defaultCard.wechatQrUrl ?? null} wechatConfigured={Boolean(defaultCard.wechat)}/></div>
   </>;
 }
