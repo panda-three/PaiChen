@@ -38,6 +38,17 @@ describe("liangchen template and product groups",()=>{
   it("builds the complete snapshot without remote image URLs",()=>{const pageIds=new Map(LIANGCHEN_CONTENT_PAGES.map((page,index)=>[page.slug,`p${index}`]));const config=liangchenHomeConfig(["c1","c2"],pageIds);expect(config.components.map((item)=>item.type)).toEqual(["productSearch","heroCarousel","employeeCard","quickNav","announcement","imageAd","imageAd","productGrid"]);expect(JSON.stringify(config)).not.toContain("aliyuncs.com");expect(LIANGCHEN_CONTENT_PAGES.flatMap((page)=>page.images)).toHaveLength(13);const series=config.components.find((item)=>item.id==="liangchen-series");expect(series).toMatchObject({type:"imageAd",items:[{target:{type:"productGroup",groups:[{categoryId:"c1"},{categoryId:"c2"}]}},{target:{type:"productGroup",groups:[{categoryId:"c1"},{categoryId:"c2"}]}}]})});
   it("keeps existing content-page slugs",()=>expect(missingLiangchenContentPages(["brand-story","contact"]).map((page)=>page.slug)).toEqual(["product-intro","case","after-sales"]));
   it("filters stale groups, preserves order and alias, and limits products",()=>{const target={type:"productGroup" as const,groups:[{categoryId:"stale",limit:null},{categoryId:"c2",alias:"餐厅",limit:1},{categoryId:"c1",limit:null}]};const products=[{categoryId:"c2",id:1},{categoryId:"c2",id:2},{categoryId:"c1",id:3}];const result=resolveProductGroup(target,[{id:"c1",name:"客厅"},{id:"c2",name:"餐厨"}],products);expect(result.groups.map((group)=>group.name)).toEqual(["餐厅","客厅"]);expect(result.active?.categoryId).toBe("c2");expect(result.visibleProducts).toEqual([products[0]])});
+  it("builds hierarchical branches for root, child-only, and mixed selections",()=>{
+    const categories=[{id:"living",name:"客厅",parentId:null},{id:"sofa",name:"沙发",parentId:"living"},{id:"table",name:"茶几",parentId:"living"},{id:"dining",name:"餐厅",parentId:null}];
+    const products=[{categoryId:"sofa"},{categoryId:"table"},{categoryId:"living"}];
+    const childOnly=resolveProductGroup({type:"productGroup",groups:[{categoryId:"table",alias:"茶几精选",limit:1}]},categories,products);
+    expect(childOnly.branches).toMatchObject([{categoryId:"living",children:[{categoryId:"table",name:"茶几",alias:"茶几精选"}]}]);
+    expect(childOnly.visibleProducts).toEqual([products[1]]);
+    const mixed=resolveProductGroup({type:"productGroup",groups:[{categoryId:"sofa",limit:2},{categoryId:"living",alias:"起居空间",limit:1}]},categories,products);
+    expect(mixed.branches[0].children.map((entry)=>entry.name)).toEqual(["全部","沙发"]);
+    expect(mixed.branches[0].children[0].limit).toBe(1);
+    expect(mixed.branches.map((entry)=>entry.categoryId)).toEqual(["living"]);
+  });
   it("does not append a product code twice",()=>{expect(productNameWithCode("云朵沙发","LC-01")).toBe("云朵沙发 LC-01");expect(productNameWithCode("云朵沙发 LC-01","LC-01")).toBe("云朵沙发 LC-01")});
 });
 

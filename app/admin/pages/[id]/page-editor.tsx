@@ -72,6 +72,13 @@ type DragData = { kind: "palette"; type: PageComponentV2["type"] } | { kind: "co
 type ImageAdItem = Extract<PageComponentV2, { type: "imageAd" }>["items"][number];
 type HeroSlide = Extract<PageComponentV2, { type: "heroCarousel" }>["slides"][number];
 
+function categoryTree(categories: Category[], query: string) {
+  const byParent = new Map<string | null, Category[]>();
+  for (const category of categories) byParent.set(category.parentId, [...(byParent.get(category.parentId) ?? []), category]);
+  const needle = query.toLowerCase();
+  return (byParent.get(null) ?? []).filter((root) => !needle || root.name.toLowerCase().includes(needle) || (byParent.get(root.id) ?? []).some((child) => child.name.toLowerCase().includes(needle))).map((root) => ({ root, children: (byParent.get(root.id) ?? []).filter((child) => !needle || root.name.toLowerCase().includes(needle) || child.name.toLowerCase().includes(needle)) }));
+}
+
 function ActionSubmitButton({ children, pendingLabel, className }: { children: ReactNode; pendingLabel: string; className: string }) {
   const { pending } = useFormStatus();
   return <button className={className} disabled={pending}>{pending ? pendingLabel : children}</button>;
@@ -249,8 +256,8 @@ export function PageEditor({ page, publicUrl, store, employee, products, categor
   }
 
   const textField = (label: string, value: string, onChange: (value: string) => void, multiline = false) => <label className="label">{label}{multiline ? <textarea className="field min-h-24" value={value} onChange={(event) => onChange(event.target.value)}/> : <input className="field" value={value} onChange={(event) => onChange(event.target.value)}/>}</label>;
-  const matchingCategories = categories.filter((item) => item.name.toLowerCase().includes(groupSearch.toLowerCase()));
-  const categoryPage = matchingCategories.slice(groupPage * 6, groupPage * 6 + 6);
+  const matchingCategories = categoryTree(categories, groupSearch);
+  const categoryPage = matchingCategories.flatMap(({ root, children }) => [root, ...children]).slice(groupPage * 6, groupPage * 6 + 6);
   function Properties() {
     if (showGroupPicker && selected?.type === "productGroupTabs") return <div className="grid gap-3"><div className="flex items-center justify-between"><strong>选择商品分组</strong><button type="button" aria-label="关闭" onClick={()=>setShowGroupPicker(false)}><X size={18}/></button></div><input className="field" placeholder="搜索分组" value={groupSearch} onChange={(event)=>{setGroupSearch(event.target.value);setGroupPage(0)}}/><div className="overflow-x-auto"><table><thead><tr><th>选择</th><th>分组</th><th>商品</th><th>创建</th></tr></thead><tbody>{categoryPage.map((category)=>{const checked=selectedGroups.some((item)=>item.categoryId===category.id);return <tr key={category.id}><td><input type="checkbox" checked={checked} disabled={!checked&&selectedGroups.length>=15} onChange={(event)=>update({groups:event.target.checked?[...selectedGroups,{categoryId:category.id,limit:null}]:selectedGroups.filter((item)=>item.categoryId!==category.id)})}/></td><td>{category.name}</td><td>{category.productCount}</td><td>{new Date(category.createdAt).toLocaleDateString("zh-CN")}</td></tr>})}</tbody></table></div><div className="flex justify-between"><button className="btn" type="button" disabled={!groupPage} onClick={()=>setGroupPage((value)=>value-1)}>上一页</button><button className="btn" type="button" disabled={(groupPage+1)*6>=matchingCategories.length} onClick={()=>setGroupPage((value)=>value+1)}>下一页</button></div><div className="flex justify-end gap-2"><button className="btn" type="button" onClick={()=>setShowGroupPicker(false)}>取消</button><button className="btn btn-primary" type="button" onClick={()=>setShowGroupPicker(false)}>确认</button></div></div>;
     if (!selected) return <div className="empty">选择画布中的组件后配置</div>;

@@ -11,6 +11,7 @@ import { ProductCard, type ProductCardProduct } from "@/components/public/produc
 import { HeroCarousel } from "./hero-carousel";
 import { categoryProductMatches } from "@/lib/category-tree";
 import { WechatSheet } from "@/components/public/wechat-sheet";
+import { resolveProductGroup } from "@/lib/product-group";
 
 export type HomeProduct = ProductCardProduct & { categoryId: string | null; category?: { name: string; parentId: string | null } | null };
 export type HomeCatalog = {
@@ -42,12 +43,12 @@ export function PublicHome({ catalog, config, employee, currentPageId, refCode, 
     if (item.type === "newProducts") return productRow(item, bySource(item).slice(0, 8));
     if (item.type === "productGrid") return productRow(item, bySource(item).slice(0, item.limit ?? 18), true);
     if (item.type === "productGroupTabs") {
-      const first = item.groups[0]?.categoryId ?? "";
-      const active = activeGroups[item.id] || first;
-      const group = item.groups.find((entry) => entry.categoryId === active);
-      const category = catalog.categories.find((entry) => entry.id === active);
-      const visible = catalog.products.filter((product) => categoryProductMatches(active, product.categoryId, product.category?.parentId ?? null)).slice(0, group?.limit ?? undefined);
-      return <section className="public-section public-groups"><header><h2>{item.title}</h2></header><nav>{item.groups.map((entry) => <button className={active === entry.categoryId ? "active" : ""} onClick={() => setActiveGroups((current) => ({ ...current, [item.id]: entry.categoryId }))} key={entry.categoryId}>{entry.alias || catalog.categories.find((value) => value.id === entry.categoryId)?.name || "已失效分组"}</button>)}</nav>{group && category ? <div className="public-grid">{visible.map((product) => <ProductCard key={product.id} product={product} slug={catalog.store.slug} refCode={refCode} favorite={favoriteSet.has(product.id)} customerActive={catalog.customerActive}/>)}</div> : <div className="public-empty">暂无可展示商品</div>}</section>;
+      const resolved = resolveProductGroup({ type: "productGroup", groups: item.groups }, catalog.categories, catalog.products);
+      const branch = resolved.branches.find((entry) => entry.categoryId === activeGroups[item.id]?.split("/")[0]) ?? resolved.branches[0];
+      const activeId = activeGroups[item.id]?.split("/")[1] || branch?.children[0]?.categoryId;
+      const active = branch?.children.find((entry) => entry.categoryId === activeId) ?? branch?.children[0];
+      const visible = active ? catalog.products.filter((product) => active.all ? product.categoryId === branch.categoryId || product.category?.parentId === branch.categoryId : product.categoryId === active.categoryId).slice(0, active.limit ?? undefined) : [];
+      return <section className="public-section public-groups"><header><h2>{item.title}</h2></header><nav className="public-group-roots">{resolved.branches.map((entry) => <button className={entry.categoryId === branch?.categoryId ? "active" : ""} onClick={() => setActiveGroups((current) => ({ ...current, [item.id]: `${entry.categoryId}/${entry.children[0]?.categoryId ?? ""}` }))} key={entry.categoryId}>{entry.alias || entry.name}</button>)}</nav><nav className="public-group-tabs">{branch?.children.map((entry) => <button className={entry.categoryId === active?.categoryId ? "active" : ""} onClick={() => setActiveGroups((current) => ({ ...current, [item.id]: `${branch.categoryId}/${entry.categoryId}` }))} key={entry.categoryId}>{entry.alias || entry.name}</button>)}</nav>{active && branch ? <div className="public-grid">{visible.map((product) => <ProductCard key={product.id} product={product} slug={catalog.store.slug} refCode={refCode} favorite={favoriteSet.has(product.id)} customerActive={catalog.customerActive}/>)}</div> : <div className="public-empty">暂无可展示商品</div>}</section>;
     }
     if (item.type === "imageAd") {
       const context = { storeSlug: catalog.store.slug, refCode, productIds: new Set(catalog.products.map((product) => product.id)), categoryIds: new Set(catalog.categories.map((category) => category.id)), pages: new Map(pages.map((page) => [page.id, page.slug])) };
